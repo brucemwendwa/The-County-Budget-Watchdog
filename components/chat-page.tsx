@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, BookOpenText, Languages, Lightbulb, Quote, ShieldCheck } from "lucide-react";
+import { BookOpenText, Languages, Lightbulb, Quote, ShieldCheck } from "lucide-react";
 
 import { BudgetChat } from "@/components/budget-chat";
 import { Badge } from "@/components/ui/badge";

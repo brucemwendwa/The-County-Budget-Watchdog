@@ -2,13 +2,13 @@
 
 import { AlertTriangle, BellRing, Check, Database, FileText, RadioTower, ShieldAlert } from "lucide-react";
 import type { ElementType } from "react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { UploadPanel } from "@/components/upload-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { BudgetDocument, SmsDigest, SuspiciousChange, WardAllocation } from "@/lib/types";
+import type { BudgetDocument, ExtractionResult, SmsDigest, SuspiciousChange, WardAllocation } from "@/lib/types";
 import { formatKes } from "@/lib/utils";
 
 type AdminData = {
@@ -21,6 +21,23 @@ type AdminData = {
 export function AdminDashboard({ data }: { data: AdminData }) {
   const [digests, setDigests] = useState(data.digests);
   const [monitorMessage, setMonitorMessage] = useState("Ready");
+  const [uploadedResults, setUploadedResults] = useState<ExtractionResult[]>([]);
+
+  useEffect(() => {
+    fetch("/api/upload")
+      .then((response) => response.json())
+      .then((payload: { results?: ExtractionResult[] }) => setUploadedResults(payload.results ?? []))
+      .catch(() => setUploadedResults([]));
+  }, []);
+
+  const documents = useMemo(
+    () => [...uploadedResults.map((result) => result.document), ...data.documents],
+    [data.documents, uploadedResults]
+  );
+  const allocations = useMemo(
+    () => [...uploadedResults.flatMap((result) => result.allocations), ...data.allocations],
+    [data.allocations, uploadedResults]
+  );
 
   async function approveDigest(digestId: string) {
     await fetch("/api/sms/digests", {
@@ -56,21 +73,21 @@ export function AdminDashboard({ data }: { data: AdminData }) {
       <p className="text-sm font-medium text-muted-foreground">{monitorMessage}</p>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <AdminMetric icon={FileText} label="Documents" value={`${data.documents.length}`} />
-        <AdminMetric icon={Database} label="Extracted rows" value={`${data.allocations.length}`} />
+        <AdminMetric icon={FileText} label="Documents" value={`${documents.length}`} />
+        <AdminMetric icon={Database} label="Extracted rows" value={`${allocations.length}`} />
         <AdminMetric icon={ShieldAlert} label="Budget alerts" value={`${data.changes.length}`} />
         <AdminMetric icon={BellRing} label="SMS drafts" value={`${data.digests.length}`} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <UploadPanel />
+        <UploadPanel onUploaded={(result) => setUploadedResults((items) => [result, ...items])} />
         <Card className="shadow-civic">
           <CardHeader>
             <CardTitle>Extraction review queue</CardTitle>
             <CardDescription>Human approval before records become public and searchable.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {data.documents.map((document) => (
+            {documents.map((document) => (
               <div key={document.id} className="flex flex-col gap-3 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="font-semibold">{document.title}</p>
@@ -94,7 +111,7 @@ export function AdminDashboard({ data }: { data: AdminData }) {
             <CardDescription>Sample normalized rows from PDF tables before approval.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {data.allocations.slice(0, 4).map((allocation) => (
+            {allocations.slice(0, 8).map((allocation) => (
               <div key={allocation.id} className="grid gap-2 rounded-md border p-3 text-sm sm:grid-cols-[1fr_auto]">
                 <div>
                   <p className="font-semibold">{allocation.project}</p>
@@ -117,12 +134,12 @@ export function AdminDashboard({ data }: { data: AdminData }) {
             <AdminFact
               icon={Database}
               label="Development rows"
-              value={`${data.allocations.filter((item) => item.budgetType === "development").length}`}
+              value={`${allocations.filter((item) => item.budgetType === "development").length}`}
             />
             <AdminFact
               icon={ShieldAlert}
               label="Needs follow-up"
-              value={`${data.allocations.filter((item) => item.status !== "on-track").length}`}
+              value={`${allocations.filter((item) => item.status !== "on-track").length}`}
             />
           </CardContent>
         </Card>
@@ -156,7 +173,7 @@ export function AdminDashboard({ data }: { data: AdminData }) {
         <Card>
           <CardHeader>
             <CardTitle>SMS digest approvals</CardTitle>
-            <CardDescription>Keep language simple before sending through Africa's Talking.</CardDescription>
+            <CardDescription>Keep language simple before sending through Africa&apos;s Talking.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {digests.map((digest) => (

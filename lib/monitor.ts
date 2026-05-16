@@ -42,53 +42,53 @@ function fallbackAmendmentAnalysis(originalBudget: string, amendedBudget: string
   const originalAmounts = extractNamedAmounts(originalBudget);
   const amendedAmounts = extractNamedAmounts(amendedBudget);
   const projectNames = Array.from(new Set([...Object.keys(originalAmounts), ...Object.keys(amendedAmounts)]));
-  const alerts = projectNames
-    .map((project) => {
-      const beforeKes = originalAmounts[project] ?? null;
-      const afterKes = amendedAmounts[project] ?? null;
-      const amountChangedKes = beforeKes !== null && afterKes !== null ? afterKes - beforeKes : null;
-      const lowerProject = project.toLowerCase();
-      const vague = /miscellaneous|administration|other expenses|consultancy/.test(lowerProject);
+  const alerts: AmendmentAlert[] = [];
 
-      if (beforeKes === afterKes && !vague) {
-        return null;
-      }
+  for (const project of projectNames) {
+    const beforeKes = originalAmounts[project] ?? null;
+    const afterKes = amendedAmounts[project] ?? null;
+    const amountChangedKes = beforeKes !== null && afterKes !== null ? afterKes - beforeKes : null;
+    const lowerProject = project.toLowerCase();
+    const vague = /miscellaneous|administration|other expenses|consultancy/.test(lowerProject);
 
-      const changeType: AmendmentAlert["changeType"] =
-        beforeKes === null
-          ? "added"
-          : afterKes === null
-            ? "removed"
-            : vague
-              ? "vague-name"
-              : amountChangedKes !== null && amountChangedKes > 0
-                ? "increased"
-                : "reduced";
-      const riskLevel: AmendmentAlert["riskLevel"] =
-        afterKes === null || vague || Math.abs(amountChangedKes ?? 0) > 10_000_000 ? "High" : "Medium";
+    if (beforeKes === afterKes && !vague) {
+      continue;
+    }
 
-      return {
-        riskLevel,
-        changeType,
-        project,
-        wardOrSector: "Not stated in parsed text",
-        department: "Not stated in parsed text",
-        programme: "Not stated in parsed text",
-        summaryOfChange: summarizeChange(project, beforeKes, afterKes, amountChangedKes),
-        beforeKes,
-        afterKes,
-        amountChangedKes,
-        sourcePages: [
-          { document: "Original budget" as const, page: 0, section: "Page missing in provided text" },
-          { document: "Amended budget" as const, page: 0, section: "Page missing in provided text" }
-        ],
-        whyItMatters:
-          "Residents need to know whether promised services gained money, lost money, or disappeared from the amended budget.",
-        questionResidentsShouldAsk:
-          "Why was this allocation changed, and what service delivery timeline should residents now expect?"
-      } satisfies AmendmentAlert;
-    })
-    .filter((alert): alert is AmendmentAlert => Boolean(alert));
+    const changeType: AmendmentAlert["changeType"] =
+      beforeKes === null
+        ? "added"
+        : afterKes === null
+          ? "removed"
+          : vague
+            ? "vague-name"
+            : amountChangedKes !== null && amountChangedKes > 0
+              ? "increased"
+              : "reduced";
+    const riskLevel: AmendmentAlert["riskLevel"] =
+      afterKes === null || vague || Math.abs(amountChangedKes ?? 0) > 10_000_000 ? "High" : "Medium";
+
+    alerts.push({
+      riskLevel,
+      changeType,
+      project,
+      wardOrSector: "Not stated in parsed text",
+      department: "Not stated in parsed text",
+      programme: "Not stated in parsed text",
+      summaryOfChange: summarizeChange(project, beforeKes, afterKes, amountChangedKes),
+      beforeKes,
+      afterKes,
+      amountChangedKes,
+      sourcePages: [
+        { document: "Original budget" as const, page: 0, section: "Page missing in provided text" },
+        { document: "Amended budget" as const, page: 0, section: "Page missing in provided text" }
+      ],
+      whyItMatters:
+        "Residents need to know whether promised services gained money, lost money, or disappeared from the amended budget.",
+      questionResidentsShouldAsk:
+        "Why was this allocation changed, and what service delivery timeline should residents now expect?"
+    });
+  }
 
   return normalizeAmendmentAnalysis({
     overallRisk: alerts.some((alert) => alert.riskLevel === "High") ? "High" : alerts.length ? "Medium" : "Low",

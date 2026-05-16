@@ -115,7 +115,7 @@ export function BudgetChat() {
           ) : (
             <div className="flex items-center gap-3 text-sm text-muted-foreground">
               <UserRound className="h-5 w-5" />
-              Try: "What changed after the amendment?"
+              Try: &quot;What changed after the amendment?&quot;
             </div>
           )}
         </div>

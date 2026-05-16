@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 import { budgetDocuments, suspiciousChanges, wardAllocations } from "@/data/sample-budget";
+import { readLocalExtractions, readUploadedAllocations } from "@/lib/local-store";
 import { buildBudgetRagPrompt } from "@/lib/prompts";
 import type { BudgetAnswer, County, RagSource } from "@/lib/types";
 import { formatKes, percentage } from "@/lib/utils";
@@ -12,18 +13,20 @@ type AskBudgetInput = {
 };
 
 export async function answerBudgetQuestion({ question, county, ward }: AskBudgetInput): Promise<BudgetAnswer> {
-  const contexts = retrieveBudgetContext(question, county, ward);
+  const uploadedAllocations = await readUploadedAllocations();
+  const contexts = retrieveBudgetContext(question, county, ward, uploadedAllocations);
 
   if (process.env.GEMINI_API_KEY) {
     return answerWithGemini(question, contexts);
   }
 
-  return answerWithDemoRag(question, contexts);
+  return answerWithLocalRag(question, contexts);
 }
 
-function retrieveBudgetContext(question: string, county?: County, ward?: string) {
+function retrieveBudgetContext(question: string, county?: County, ward?: string, uploadedAllocations = wardAllocations) {
   const query = [question, county, ward].filter(Boolean).join(" ").toLowerCase();
-  const scored = wardAllocations
+  const sourceAllocations = uploadedAllocations.length > 0 ? uploadedAllocations : wardAllocations;
+  const scored = sourceAllocations
     .map((allocation) => {
       const haystack = [
         allocation.county,
@@ -63,9 +66,13 @@ async function answerWithGemini(question: string, contexts: ReturnType<typeof re
   return JSON.parse(text) as BudgetAnswer;
 }
 
-function answerWithDemoRag(question: string, contexts: ReturnType<typeof retrieveBudgetContext>): BudgetAnswer {
+async function answerWithLocalRag(question: string, contexts: ReturnType<typeof retrieveBudgetContext>): Promise<BudgetAnswer> {
   const allocation = contexts[0] ?? wardAllocations[0];
-  const document = budgetDocuments.find((item) => item.county === allocation.county) ?? budgetDocuments[0];
+  const uploaded = await readLocalExtractions();
+  const uploadedDocument = uploaded.results.find((result) =>
+    result.allocations.some((item) => item.id === allocation.id)
+  )?.document;
+  const document = uploadedDocument ?? budgetDocuments.find((item) => item.county === allocation.county) ?? budgetDocuments[0];
   const absorption = percentage(allocation.expenditureKes, allocation.allocationKes);
   const isChangeQuestion = /change|amend|supplementary|gazette/i.test(question);
   const change = suspiciousChanges.find((item) => item.ward === allocation.ward);

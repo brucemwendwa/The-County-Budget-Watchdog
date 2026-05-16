@@ -4,5 +4,6 @@ out
 .env
 .env.local
 .vercel
+.runtime
 coverage
 *.log

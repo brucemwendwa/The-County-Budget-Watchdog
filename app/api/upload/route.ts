@@ -5,6 +5,7 @@ import { saveExtractionResult } from "@/lib/db";
 import { requireAdmin } from "@/lib/auth";
 import type { County } from "@/lib/types";
 import { storePdf } from "@/lib/storage";
+import { readLocalExtractions, saveLocalExtraction } from "@/lib/local-store";
 
 export const runtime = "nodejs";
 
@@ -29,6 +30,11 @@ export async function POST(request: Request) {
     result.document.sourceUrl = storagePath;
   }
   await saveExtractionResult(result);
+  await saveLocalExtraction(result);
 
   return NextResponse.json(result);
+}
+
+export async function GET() {
+  return NextResponse.json(await readLocalExtractions());
 }
