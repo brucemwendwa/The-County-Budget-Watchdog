@@ -3,7 +3,8 @@ import path from "path";
 
 import type { ExtractionResult, WardAllocation } from "@/lib/types";
 
-const runtimeDir = path.join(process.cwd(), ".runtime");
+const runtimeDir =
+  process.env.VERCEL === "1" ? path.join("/tmp", "county-budget-watchdog") : path.join(process.cwd(), ".runtime");
 const extractionFile = path.join(runtimeDir, "extractions.json");
 
 type StoredExtractions = {
