@@ -43,7 +43,7 @@ const config: Config = {
         sm: "0.25rem"
       },
       fontFamily: {
-        sans: ["var(--font-inter)", "Inter", "system-ui", "sans-serif"]
+        sans: ["system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Arial", "sans-serif"]
       },
       boxShadow: {
         civic: "0 16px 48px rgba(15, 23, 42, 0.10)"

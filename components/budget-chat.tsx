@@ -18,6 +18,7 @@ export function BudgetChat() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<BudgetAnswer | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   async function askBudget(event?: FormEvent<HTMLFormElement>, seededQuestion?: string) {
     event?.preventDefault();
@@ -27,15 +28,26 @@ export function BudgetChat() {
     }
 
     setLoading(true);
+    setError("");
     setQuestion(query);
-    const response = await fetch("/api/ask", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: query, county: "Nairobi", ward: "Kileleshwa" })
-    });
-    const payload = (await response.json()) as BudgetAnswer;
-    setAnswer(payload);
-    setLoading(false);
+
+    try {
+      const response = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: query, county: "Nairobi", ward: "Kileleshwa" })
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error ?? "Could not answer that question.");
+      }
+      const payload = (await response.json()) as BudgetAnswer;
+      setAnswer(payload);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not answer that question.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -73,6 +85,7 @@ export function BudgetChat() {
             <Send className="h-4 w-4" />
           </Button>
         </form>
+        {error ? <p className="rounded-md bg-rose-50 p-3 text-sm font-medium text-rose-800">{error}</p> : null}
         <div className="rounded-lg border bg-muted/40 p-4">
           {answer ? (
             <div className="space-y-4 text-sm">

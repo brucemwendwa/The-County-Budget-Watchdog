@@ -15,24 +15,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const form = await request.formData();
-  const file = form.get("file");
-  const county = (form.get("county") ?? "Nairobi") as County;
-  const fiscalYear = String(form.get("fiscalYear") ?? "2025/2026");
+  try {
+    const form = await request.formData();
+    const file = form.get("file");
+    const county = (form.get("county") ?? "Nairobi") as County;
+    const fiscalYear = String(form.get("fiscalYear") ?? "2025/2026");
 
-  if (!(file instanceof File)) {
-    return NextResponse.json({ error: "Missing PDF file" }, { status: 400 });
+    if (!(file instanceof File)) {
+      return NextResponse.json({ error: "Missing PDF file" }, { status: 400 });
+    }
+
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
+      return NextResponse.json({ error: "Only PDF uploads are supported" }, { status: 400 });
+    }
+
+    const result = await parseBudgetDocument({ file, county, fiscalYear });
+    const storagePath = await storePdf(file, result.document.id);
+    if (storagePath) {
+      result.document.sourceUrl = storagePath;
+    }
+    await saveExtractionResult(result);
+    await saveLocalExtraction(result);
+
+    return NextResponse.json(result);
+  } catch {
+    return NextResponse.json(
+      { error: "Upload failed. Check storage, OCR, and database credentials, then try again." },
+      { status: 500 }
+    );
   }
-
-  const result = await parseBudgetDocument({ file, county, fiscalYear });
-  const storagePath = await storePdf(file, result.document.id);
-  if (storagePath) {
-    result.document.sourceUrl = storagePath;
-  }
-  await saveExtractionResult(result);
-  await saveLocalExtraction(result);
-
-  return NextResponse.json(result);
 }
 
 export async function GET() {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { apiErrorResponse } from "@/lib/api";
 import { generateSmsVersions } from "@/lib/sms";
 
 const SmsVersionsSchema = z.object({
@@ -8,8 +9,12 @@ const SmsVersionsSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const input = SmsVersionsSchema.parse(await request.json());
-  const versions = await generateSmsVersions(input.budgetUpdate);
+  try {
+    const input = SmsVersionsSchema.parse(await request.json());
+    const versions = await generateSmsVersions(input.budgetUpdate);
 
-  return NextResponse.json({ versions });
+    return NextResponse.json({ versions });
+  } catch (error) {
+    return apiErrorResponse(error);
+  }
 }

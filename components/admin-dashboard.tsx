@@ -21,6 +21,7 @@ type AdminData = {
 export function AdminDashboard({ data }: { data: AdminData }) {
   const [digests, setDigests] = useState(data.digests);
   const [monitorMessage, setMonitorMessage] = useState("Ready");
+  const [digestMessage, setDigestMessage] = useState("");
   const [uploadedResults, setUploadedResults] = useState<ExtractionResult[]>([]);
 
   useEffect(() => {
@@ -40,19 +41,34 @@ export function AdminDashboard({ data }: { data: AdminData }) {
   );
 
   async function approveDigest(digestId: string) {
-    await fetch("/api/sms/digests", {
+    setDigestMessage("");
+    const response = await fetch("/api/sms/digests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ digestId, recipients: ["+254700000000"] })
     });
 
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      setDigestMessage(payload.error ?? "Could not approve digest.");
+      return;
+    }
+
     setDigests((items) => items.map((item) => (item.id === digestId ? { ...item, status: "approved" as const } : item)));
+    setDigestMessage("Digest approved. SMS adapter returned a preview unless Africa's Talking is configured.");
   }
 
   async function runMonitor() {
-    const response = await fetch("/api/monitor");
-    const payload = (await response.json()) as { alerts: SuspiciousChange[]; checkedAt: string };
-    setMonitorMessage(`${payload.alerts.length} alerts checked at ${new Date(payload.checkedAt).toLocaleTimeString()}`);
+    try {
+      const response = await fetch("/api/monitor");
+      if (!response.ok) {
+        throw new Error("Monitor request failed.");
+      }
+      const payload = (await response.json()) as { alerts: SuspiciousChange[]; checkedAt: string };
+      setMonitorMessage(`${payload.alerts.length} alerts checked at ${new Date(payload.checkedAt).toLocaleTimeString()}`);
+    } catch {
+      setMonitorMessage("Monitor could not run. Check server logs or integration credentials.");
+    }
   }
 
   return (
@@ -176,6 +192,7 @@ export function AdminDashboard({ data }: { data: AdminData }) {
             <CardDescription>Keep language simple before sending through Africa&apos;s Talking.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            {digestMessage ? <p className="rounded-md bg-muted p-3 text-sm font-medium">{digestMessage}</p> : null}
             {digests.map((digest) => (
               <div key={digest.id} className="rounded-md border p-3">
                 <div className="flex items-center justify-between gap-3">

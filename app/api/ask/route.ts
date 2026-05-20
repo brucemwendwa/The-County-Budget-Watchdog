@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { answerBudgetQuestion } from "@/lib/ai";
+import { apiErrorResponse } from "@/lib/api";
 
 const AskSchema = z.object({
   question: z.string().min(3),
@@ -10,9 +11,13 @@ const AskSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const json = await request.json();
-  const input = AskSchema.parse(json);
-  const answer = await answerBudgetQuestion(input);
+  try {
+    const json = await request.json();
+    const input = AskSchema.parse(json);
+    const answer = await answerBudgetQuestion(input);
 
-  return NextResponse.json(answer);
+    return NextResponse.json(answer);
+  } catch (error) {
+    return apiErrorResponse(error);
+  }
 }
