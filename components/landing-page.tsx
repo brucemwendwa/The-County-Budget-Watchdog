@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ElementType } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, BadgeCheck, Bot, FileUp, Landmark, MessageSquareText, RadioTower, ShieldCheck } from "lucide-react";
+import { ArrowRight, BadgeCheck, Bot, ChartColumnBig, FileUp, Landmark, MessageSquareText, RadioTower, ShieldCheck } from "lucide-react";
 
 import { DepartmentBarChart } from "@/components/budget-charts";
 import { Badge } from "@/components/ui/badge";
@@ -41,10 +41,10 @@ export function LandingPage({ departments, smsPreview }: LandingPageProps) {
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <Button asChild className="h-12 justify-between">
-                <Link href="/admin">
+                <Link href="/dashboard">
                   <span className="flex items-center gap-2">
-                    <FileUp className="h-4 w-4" />
-                    Upload PDF
+                    <ChartColumnBig className="h-4 w-4" />
+                    View dashboard
                   </span>
                   <ArrowRight className="h-4 w-4" />
                 </Link>
