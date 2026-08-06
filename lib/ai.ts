@@ -1,239 +1,328 @@
+import "server-only";
+
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 
-import { budgetDocuments, suspiciousChanges, wardAllocations } from "@/data/sample-budget";
-import { readLocalExtractions, readUploadedAllocations } from "@/lib/local-store";
-import { buildBudgetRagPrompt } from "@/lib/prompts";
-import type { BudgetAnswer, County, RagSource } from "@/lib/types";
-import { formatKes, percentage } from "@/lib/utils";
+import { resolve } from "@/lib/kenya-server";
+import { locationLabel } from "@/lib/kenya";
+import { buildBudgetAnswerPrompt } from "@/lib/prompts";
+import { listExtractions } from "@/lib/store";
+import type { BudgetAnswer, ExtractionResult, RagSource } from "@/lib/types";
+import { formatKes } from "@/lib/utils";
 
-type AskBudgetInput = {
-  question: string;
-  county?: County;
-  ward?: string;
+export type LocationScopeInput = {
+  countyCode?: string;
+  subCountyCode?: string;
+  wardCode?: string;
 };
 
-export type AnswerSource = "gemini" | "local-rag" | "local-rag-fallback";
+export type AnswerSource = "gemini" | "documents" | "no-documents";
 
 export type BudgetAnswerResult = {
   answer: BudgetAnswer;
   source: AnswerSource;
+  /** Documents the retrieval actually searched, so the UI can show the scope of the answer. */
+  searchedDocuments: Array<{ id: string; title: string; fiscalYear: string }>;
 };
 
-const RagSourceSchema = z.object({
-  documentId: z.string().default("unknown-document"),
-  title: z.string().default("Untitled source document"),
-  page: z.number().int().min(0).default(0),
-  excerpt: z.string().default(""),
-  section: z.string().optional(),
-  table: z.string().optional(),
-  programme: z.string().optional()
-});
+/** The wording the product uses whenever the documents do not cover a question. */
+const NO_INFORMATION = "The uploaded document does not clearly provide this information.";
 
-/**
- * The model is asked for JSON but is not guaranteed to return it, and an unvalidated shape reaches
- * the UI as blank panels or a 500. Anything that fails this schema falls back to the local answer.
- */
-const BudgetAnswerSchema = z.object({
+const NO_DOCUMENTS =
+  "No budget documents have been processed for this area yet, so there is nothing to answer from. Upload a county budget PDF to get started.";
+
+const AnswerSchema = z.object({
   directAnswer: z.string().min(1),
-  amountsInvolved: z.array(z.string()).default([]),
-  sourceCitation: z.string().default(""),
   simpleExplanation: z.string().min(1),
-  facts: z.array(z.string()).default([]),
-  interpretation: z.string().default(""),
-  swahiliFriendlyExplanation: z.string().optional(),
-  sourcePages: z.array(RagSourceSchema).default([]),
-  confidence: z.number().default(0.5).transform(normalizeConfidence),
-  whyThisMatters: z.string().default(""),
-  suggestedCivicAction: z.string().default(""),
-  suggestedQuestion: z.string().default("")
+  amountsInvolved: z.array(z.string()).default([]),
+  sourceDocument: z.string().default(""),
+  citedEvidence: z.array(z.number().int().positive()).default([]),
+  confidence: z.number().default(0.5),
+  meaningForCitizens: z.string().default(""),
+  suggestedQuestion: z.string().default(""),
+  unanswered: z.boolean().default(false)
 });
 
 export async function answerBudgetQuestion({
   question,
-  county,
-  ward
-}: AskBudgetInput): Promise<BudgetAnswerResult> {
-  const uploadedAllocations = await readUploadedAllocations();
-  const contexts = retrieveBudgetContext(question, county, ward, uploadedAllocations);
+  scope
+}: {
+  question: string;
+  scope: LocationScopeInput;
+}): Promise<BudgetAnswerResult> {
+  const extractions = await findExtractionsInScope(scope);
+  const place = locationLabel(resolve(scope));
 
-  if (!process.env.GEMINI_API_KEY) {
-    return { answer: await answerWithLocalRag(question, contexts), source: "local-rag" };
+  if (extractions.length === 0) {
+    return {
+      answer: emptyAnswer(NO_DOCUMENTS),
+      source: "no-documents",
+      searchedDocuments: []
+    };
   }
 
-  const geminiAnswer = await answerWithGemini(question, contexts);
-  if (geminiAnswer) {
-    return { answer: geminiAnswer, source: "gemini" };
+  const searchedDocuments = extractions.map((result) => ({
+    id: result.document.id,
+    title: result.document.title,
+    fiscalYear: result.document.fiscalYear
+  }));
+
+  const evidence = retrieveEvidence(question, extractions, scope);
+
+  if (evidence.length === 0) {
+    return {
+      answer: {
+        ...emptyAnswer(NO_INFORMATION),
+        sourceDocument: extractions[0].document.title
+      },
+      source: "documents",
+      searchedDocuments
+    };
   }
 
-  return { answer: await answerWithLocalRag(question, contexts), source: "local-rag-fallback" };
+  if (process.env.GEMINI_API_KEY) {
+    const modelAnswer = await answerWithGemini(question, place, evidence);
+    if (modelAnswer) {
+      return { answer: modelAnswer, source: "gemini", searchedDocuments };
+    }
+  }
+
+  return {
+    answer: answerFromEvidence(question, evidence),
+    source: "documents",
+    searchedDocuments
+  };
 }
 
-/** Gemini answers are clamped to 0–1; models sometimes report confidence as a percentage. */
+async function findExtractionsInScope(scope: LocationScopeInput): Promise<ExtractionResult[]> {
+  const all = await listExtractions();
+  if (!scope.countyCode) return all;
+  return all.filter((result) => result.document.countyCode === scope.countyCode);
+}
+
+/**
+ * Lexical retrieval over everything a document yielded: its budget rows, the totals it stated, and
+ * any change language it contains. Each passage keeps the page it came from so the answer can be
+ * checked against the source.
+ */
+function retrieveEvidence(
+  question: string,
+  extractions: ExtractionResult[],
+  scope: LocationScopeInput,
+  limit = 6
+): RagSource[] {
+  const tokens = tokenize(question);
+  const scored: Array<{ source: RagSource; score: number }> = [];
+
+  for (const result of extractions) {
+    const { document, analysis } = result;
+
+    for (const item of result.lineItems) {
+      // Rows for the selected ward matter more than the county's other rows.
+      const locationBoost =
+        (scope.wardCode && item.wardCode === scope.wardCode) ||
+        (scope.subCountyCode && item.subCountyCode === scope.subCountyCode)
+          ? 3
+          : 0;
+
+      const haystack = [
+        item.wardName,
+        item.subCountyName,
+        item.department,
+        item.programme,
+        item.project,
+        item.budgetType
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      const score = overlap(tokens, haystack) + locationBoost;
+      if (score === 0) continue;
+
+      scored.push({
+        score,
+        source: {
+          documentId: document.id,
+          title: document.title,
+          page: item.page,
+          section: item.department,
+          programme: item.programme,
+          excerpt: `${item.project} — ${formatKes(item.allocationKes)} allocated${
+            item.expenditureKes !== null ? `, ${formatKes(item.expenditureKes)} in the comparison column` : ""
+          }${item.wardName ? ` (${item.wardName} Ward)` : " (county-wide row)"}. Source line: "${item.excerpt}"`
+        }
+      });
+    }
+
+    for (const number of analysis.keyNumbers) {
+      const score = overlap(tokens, number.label) + 1;
+      scored.push({
+        score,
+        source: {
+          documentId: document.id,
+          title: document.title,
+          page: number.page,
+          section: number.label,
+          excerpt: `${number.label}: ${formatKes(number.amountKes)}. Source line: "${number.excerpt}"`
+        }
+      });
+    }
+
+    for (const change of analysis.changes) {
+      const score = overlap(tokens, change.description);
+      if (score === 0) continue;
+      scored.push({
+        score,
+        source: {
+          documentId: document.id,
+          title: document.title,
+          page: change.page,
+          section: "Recorded change",
+          excerpt: change.excerpt
+        }
+      });
+    }
+  }
+
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((entry) => entry.source);
+}
+
+function tokenize(value: string) {
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9']+/)
+    .filter((token) => token.length > 2 && !STOP_WORDS.has(token));
+}
+
+const STOP_WORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "what",
+  "how",
+  "much",
+  "was",
+  "are",
+  "does",
+  "did",
+  "this",
+  "that",
+  "with",
+  "from",
+  "has",
+  "have",
+  "county",
+  "budget",
+  "ward"
+]);
+
+function overlap(tokens: string[], haystack: string) {
+  const text = haystack.toLowerCase();
+  return tokens.reduce((score, token) => score + (text.includes(token) ? 1 : 0), 0);
+}
+
+async function answerWithGemini(
+  question: string,
+  place: string,
+  evidence: RagSource[]
+): Promise<BudgetAnswer | null> {
+  try {
+    const client = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+    const model = client.getGenerativeModel({
+      model: process.env.GEMINI_MODEL ?? "gemini-2.0-flash",
+      generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
+    });
+
+    const response = await model.generateContent(buildBudgetAnswerPrompt({ question, place, evidence }));
+    const parsed = AnswerSchema.safeParse(JSON.parse(response.response.text()));
+
+    if (!parsed.success) {
+      console.error("Model returned an unusable answer", parsed.error.issues);
+      return null;
+    }
+
+    const data = parsed.data;
+
+    // Only citations pointing at evidence that was actually supplied survive. A model that cites
+    // something it was not given has left the documents, and the citation must not reach the reader.
+    const citedPages = data.citedEvidence
+      .map((index) => evidence[index - 1])
+      .filter((source): source is RagSource => Boolean(source));
+    const sourcePages = citedPages.length > 0 ? citedPages : evidence.slice(0, 2);
+
+    if (data.unanswered) {
+      return { ...emptyAnswer(NO_INFORMATION), sourceDocument: evidence[0].title, sourcePages };
+    }
+
+    return {
+      directAnswer: data.directAnswer,
+      simpleExplanation: data.simpleExplanation,
+      amountsInvolved: data.amountsInvolved,
+      sourceDocument: data.sourceDocument || evidence[0].title,
+      sourcePages,
+      confidence: normalizeConfidence(data.confidence),
+      meaningForCitizens: data.meaningForCitizens,
+      suggestedQuestion: data.suggestedQuestion,
+      unanswered: false
+    };
+  } catch (error) {
+    console.error("Model answer failed", error);
+    return null;
+  }
+}
+
+/**
+ * The answer used when no model is configured, or when the model call fails. It restates what the
+ * retrieved rows say and nothing more, so it is always as grounded as the documents themselves.
+ */
+function answerFromEvidence(question: string, evidence: RagSource[]): BudgetAnswer {
+  const top = evidence[0];
+  const amounts = evidence
+    .map((source) => source.excerpt.match(/(?:KES|KSh)\s?[\d.,]+[MBK]?/i)?.[0])
+    .filter((value): value is string => Boolean(value))
+    .slice(0, 5);
+
+  return {
+    directAnswer: `The processed documents contain ${evidence.length} passage${
+      evidence.length === 1 ? "" : "s"
+    } relevant to this question. The closest match is on page ${top.page} of ${top.title}${
+      top.section ? `, under ${top.section}` : ""
+    }.`,
+    simpleExplanation:
+      "This reply lists what the source pages record, without interpretation. The AI assistant is not configured on this deployment, so nothing has been summarised for you — read the cited pages below to see the wording the document uses.",
+    amountsInvolved: amounts,
+    sourceDocument: top.title,
+    sourcePages: evidence,
+    confidence: 0.5,
+    meaningForCitizens:
+      "These are the budget lines your county recorded for this area. Comparing them with what has been built or delivered is the basis for a question at a public participation forum.",
+    suggestedQuestion: `What is the current implementation status of the item on page ${top.page}, and who is responsible for delivering it?`,
+    unanswered: false
+  };
+}
+
+function emptyAnswer(message: string): BudgetAnswer {
+  return {
+    directAnswer: message,
+    simpleExplanation: message,
+    amountsInvolved: [],
+    sourceDocument: "",
+    sourcePages: [],
+    confidence: 0,
+    meaningForCitizens:
+      "A missing answer is still useful information: it means the published documents do not record this, which is itself worth asking about.",
+    suggestedQuestion: "Which document records this, and can the county publish it?",
+    unanswered: true
+  };
+}
+
+/** Models sometimes report confidence as a percentage; everything is clamped to 0–1. */
 function normalizeConfidence(value: number) {
   const normalized = value > 1 ? value / 100 : value;
   return Math.min(1, Math.max(0, Number(normalized.toFixed(2))));
 }
 
-function retrieveBudgetContext(question: string, county?: County, ward?: string, uploadedAllocations = wardAllocations) {
-  const query = [question, county, ward].filter(Boolean).join(" ").toLowerCase();
-  const sourceAllocations = uploadedAllocations.length > 0 ? uploadedAllocations : wardAllocations;
-  const scored = sourceAllocations
-    .map((allocation) => {
-      const haystack = [
-        allocation.county,
-        allocation.ward,
-        allocation.constituency,
-        allocation.department,
-        allocation.programme,
-        allocation.project,
-        allocation.status
-      ]
-        .join(" ")
-        .toLowerCase();
-      const score = query
-        .split(/\s+/)
-        .filter((token) => token.length > 2)
-        .reduce((sum, token) => sum + (haystack.includes(token) ? 1 : 0), 0);
-      return { allocation, score };
-    })
-    .sort((a, b) => b.score - a.score);
-
-  return scored.slice(0, 4).map(({ allocation }) => allocation);
-}
-
-/** Returns null when the model errors or returns something that is not a usable BudgetAnswer. */
-async function answerWithGemini(
-  question: string,
-  contexts: ReturnType<typeof retrieveBudgetContext>
-): Promise<BudgetAnswer | null> {
-  try {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-    const model = genAI.getGenerativeModel({
-      model: process.env.GEMINI_MODEL ?? "gemini-1.5-pro-latest",
-      generationConfig: {
-        temperature: 0.2,
-        responseMimeType: "application/json"
-      }
-    });
-
-    const result = await model.generateContent(buildBudgetRagPrompt(question, contexts));
-    const parsed = BudgetAnswerSchema.safeParse(JSON.parse(result.response.text()));
-
-    if (!parsed.success) {
-      console.error("Gemini returned an unusable budget answer", parsed.error.issues);
-      return null;
-    }
-
-    return parsed.data;
-  } catch (error) {
-    console.error("Gemini budget answer failed", error);
-    return null;
-  }
-}
-
-async function answerWithLocalRag(question: string, contexts: ReturnType<typeof retrieveBudgetContext>): Promise<BudgetAnswer> {
-  const allocation = contexts[0] ?? wardAllocations[0];
-  const uploaded = await readLocalExtractions();
-  const uploadedDocument = uploaded.results.find((result) =>
-    result.allocations.some((item) => item.id === allocation.id)
-  )?.document;
-  const document = uploadedDocument ?? budgetDocuments.find((item) => item.county === allocation.county) ?? budgetDocuments[0];
-  const absorption = percentage(allocation.expenditureKes, allocation.allocationKes);
-  const isChangeQuestion = /change|amend|supplementary|gazette/i.test(question);
-  const change = suspiciousChanges.find((item) => item.ward === allocation.ward);
-
-  const sourcePages: RagSource[] = [
-    {
-      documentId: document.id,
-      title: document.title,
-      page: allocation.page,
-      section: allocation.department,
-      table: "Ward project allocations",
-      programme: allocation.programme,
-      excerpt: `${allocation.project}: ${formatKes(allocation.allocationKes)} allocated; ${formatKes(
-        allocation.expenditureKes
-      )} spent.`
-    }
-  ];
-
-  if (isChangeQuestion && change) {
-    sourcePages.push({
-      documentId: "monitor-amendment-feed",
-      title: "Amendment comparison monitor",
-      page: change.sourcePage,
-      section: change.department,
-      table: "Budget change comparison",
-      programme: change.department,
-      excerpt: change.description
-    });
-  }
-
-  const directAnswer =
-    isChangeQuestion && change
-      ? `${change.ward} has a documented budget change in ${change.department}.`
-      : `${allocation.ward} has a documented allocation for ${allocation.project}.`;
-  const amountsInvolved =
-    isChangeQuestion && change
-      ? [
-          `Before amendment: ${formatKes(change.beforeKes)}`,
-          `After amendment: ${formatKes(change.afterKes)}`,
-          `Change: ${formatKes(change.deltaKes)}`
-        ]
-      : [
-          `Allocation: ${formatKes(allocation.allocationKes)}`,
-          `Recorded expenditure: ${formatKes(allocation.expenditureKes)}`,
-          `Absorption rate: ${absorption}%`
-        ];
-  const sourceCitation =
-    isChangeQuestion && change
-      ? `${document.title}, page ${allocation.page}, ${allocation.department}; Amendment comparison monitor, page ${change.sourcePage}, ${change.department}`
-      : `${document.title}, page ${allocation.page}, ${allocation.department}, ${allocation.programme}`;
-  const simpleExplanation =
-    isChangeQuestion && change
-      ? `${change.ward} has a flagged budget change in ${change.department}. The amount moved from ${formatKes(
-          change.beforeKes
-        )} to ${formatKes(change.afterKes)}, a change of ${formatKes(change.deltaKes)}.`
-      : `${allocation.ward} has ${formatKes(allocation.allocationKes)} allocated for ${allocation.project}. The records show ${formatKes(
-          allocation.expenditureKes
-        )} spent so far. Absorption rate means the share of allocated money that has actually been spent; here it is about ${absorption}%.`;
-
-  return {
-    directAnswer,
-    amountsInvolved,
-    sourceCitation,
-    simpleExplanation,
-    facts:
-      isChangeQuestion && change
-        ? [
-            `${change.department} in ${change.ward} changed from ${formatKes(change.beforeKes)} to ${formatKes(
-              change.afterKes
-            )}.`,
-            `The source page for the change alert is page ${change.sourcePage}.`
-          ]
-        : [
-            `${allocation.project} is listed under ${allocation.department}.`,
-            `${formatKes(allocation.allocationKes)} is allocated and ${formatKes(
-              allocation.expenditureKes
-            )} is recorded as spent.`
-          ],
-    interpretation:
-      absorption < 35
-        ? "Interpretation: this may point to delayed implementation or procurement follow-up needs. It is not proof of wrongdoing by itself."
-        : "Interpretation: this looks closer to normal implementation, but residents can still ask for timelines and evidence of delivery.",
-    swahiliFriendlyExplanation:
-      absorption < 35
-        ? "Kwa lugha rahisi: pesa imepangwa, lakini matumizi yaliyoandikwa bado ni kidogo. Uliza hali ya mradi na lini utakamilika."
-        : "Kwa lugha rahisi: pesa imepangwa na sehemu yake imetumika. Uliza ushahidi wa kazi iliyofanyika na ratiba ya kukamilisha.",
-    sourcePages,
-    confidence: Math.max(0.68, allocation.confidence - 0.03),
-    whyThisMatters:
-      absorption < 35
-        ? "Low spending can mean a promised service is delayed, procurement is stuck, or the project needs public follow-up."
-        : "This helps residents compare promises in the budget with visible services on the ground.",
-    suggestedCivicAction:
-      "Ask your MCA or ward administrator for the project implementation status, contractor details, and expected completion date.",
-    suggestedQuestion:
-      "What is the current implementation status, who is responsible, and when should residents expect the service to be completed?"
-  };
-}
+export type { LocationScope };
