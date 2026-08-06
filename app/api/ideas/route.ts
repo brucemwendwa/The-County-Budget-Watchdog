@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { apiErrorResponse } from "@/lib/api";
+import { saveCitizenIdea } from "@/lib/db";
 import { validateSelection } from "@/lib/kenya-server";
 import { listIdeas, saveIdea } from "@/lib/store";
 import { IDEA_CATEGORY_LABELS, type CitizenIdea, type IdeaCategory } from "@/lib/types";
