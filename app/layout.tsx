@@ -2,35 +2,39 @@ import { Analytics } from "@vercel/analytics/next";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-import { SiteFooter } from "@/components/site-footer";
-import { SiteHeader } from "@/components/site-header";
+import { AppShell } from "@/components/app-shell";
+import { LocationProvider } from "@/components/location-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "County Budget Tracker",
+  title: {
+    default: "County Budget Tracker",
+    template: "%s · County Budget Tracker"
+  },
   description:
-    "AI-powered civic finance platform helping citizens understand official county budget documents from county to ward level."
+    "Track. Understand. Participate. Explore Kenya's county budgets from county to ward level, ask questions grounded in official documents, and share ideas for your ward."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* Applied before first paint so a dark-mode user never sees a white flash. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("cbt-theme");if(t==="dark")document.documentElement.classList.add("dark");}catch(e){}})();`
+            __html: `(function(){try{if(localStorage.getItem("cbt-theme")==="dark")document.documentElement.classList.add("dark");}catch(e){}})();`
           }}
         />
       </head>
       <body className="font-sans antialiased">
         <ThemeProvider>
-          <Analytics />
-          <SiteHeader />
-          {children}
-          <SiteFooter />
+          <LocationProvider>
+            <AppShell>{children}</AppShell>
+          </LocationProvider>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
