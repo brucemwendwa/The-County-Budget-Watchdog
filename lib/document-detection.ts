@@ -68,9 +68,11 @@ export function detectDocumentMetadata({
 }
 
 function detectCounty(pages: string[], fileName: string): DetectedField<string | null> {
-  // "Nairobi City County" beats a bare mention of a town, so the explicit phrasing is tried first.
+  // "Machakos County" beats a bare mention of a town, so the explicit phrasing is tried first.
+  // Matched case-insensitively because cover pages are usually set in capitals; every candidate is
+  // then checked against the real county list, so a false positive cannot get through.
   for (const [index, page] of pages.entries()) {
-    for (const match of page.matchAll(/\b([A-Z][A-Za-z'’\- ]{2,24}?)\s+(?:City\s+)?County\b/g)) {
+    for (const match of page.matchAll(/\b([A-Za-z'’\- ]{3,25}?)\s+(?:city\s+)?county\b/gi)) {
       const county = matchCounty(match[1]);
       if (county) {
         return {
