@@ -22,7 +22,21 @@ export async function generateSmsVersions(budgetUpdate: string): Promise<SmsVers
   return fallbackSmsVersions(budgetUpdate);
 }
 
-export async function sendSmsDigest(digest: SmsDigest, recipients: string[]) {
+export async function sendSmsDigest(
+  digest: SmsDigest,
+  recipients: string[],
+  { allowRealSend = false }: { allowRealSend?: boolean } = {}
+) {
+  // Delivery reaches real phone numbers, so an unauthenticated caller only ever gets a preview.
+  if (!allowRealSend) {
+    return {
+      sent: false,
+      reason: "Admin key required for SMS delivery",
+      preview: digest.body,
+      recipients
+    };
+  }
+
   if (!process.env.AFRICASTALKING_API_KEY) {
     return {
       sent: false,
