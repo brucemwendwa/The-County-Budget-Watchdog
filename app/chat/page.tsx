@@ -1,6 +1,5 @@
-import { ChatPage } from "@/components/chat-page";
-import { getResidentDashboardData } from "@/lib/data";
+import { redirect } from "next/navigation";
 
-export default function BudgetChatPage() {
-  return <ChatPage documents={getResidentDashboardData().documents} />;
+export default function ChatGPTChatRedirect() {
+  redirect("/ask-ai");
 }
