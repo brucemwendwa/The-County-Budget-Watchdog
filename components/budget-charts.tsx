@@ -13,8 +13,8 @@ import {
   YAxis
 } from "recharts";
 
-import type { DepartmentSummary, WardAllocation } from "@/lib/types";
-import { formatKes, percentage } from "@/lib/utils";
+import type { DepartmentSummary } from "@/lib/types";
+import { formatKes } from "@/lib/utils";
 
 const COLORS = ["#128359", "#d61f2a", "#f5b942", "#2979a8", "#6b7280"];
 
@@ -66,21 +66,3 @@ export function DevelopmentPieChart({ departments }: { departments: DepartmentSu
   );
 }
 
-export function WardAbsorptionChart({ allocations }: { allocations: WardAllocation[] }) {
-  const data = allocations.map((allocation) => ({
-    name: allocation.ward,
-    absorption: percentage(allocation.expenditureKes, allocation.allocationKes)
-  }));
-
-  return (
-    <ResponsiveContainer width="100%" height={240}>
-      <BarChart data={data} layout="vertical" margin={{ left: 20, right: 18, top: 8, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-        <XAxis type="number" domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
-        <YAxis type="category" dataKey="name" width={92} tick={{ fontSize: 12 }} />
-        <Tooltip formatter={(value) => `${value}% spent`} />
-        <Bar dataKey="absorption" radius={[0, 6, 6, 0]} fill="#d61f2a" />
-      </BarChart>
-    </ResponsiveContainer>
-  );
-}
