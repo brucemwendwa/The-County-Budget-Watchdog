@@ -1,124 +1,59 @@
-export function buildBudgetRagPrompt(question: string, context: unknown) {
-  return `
-You are County Budget Tracker, an AI-powered civic finance assistant for Kenyan residents.
+import type { RagSource } from "@/lib/types";
 
-Use only the retrieved budget document chunks below to answer the user question. Answer in simple, accurate,
-non-partisan language. Never guess figures. If a figure is missing, say so. Always separate facts from
-interpretation. Do not accuse anyone of corruption unless the retrieved evidence directly proves it.
+export type PromptContext = {
+  question: string;
+  place: string;
+  /** Numbered evidence passages; the model may only cite these. */
+  evidence: RagSource[];
+};
 
-User question:
+/**
+ * The answering prompt.
+ *
+ * Its whole job is to keep the model inside the evidence it was given. The retrieved passages are
+ * numbered and the model must cite them by number, which makes an invented citation easy to detect
+ * and discard before the answer reaches the reader.
+ */
+export function buildBudgetAnswerPrompt({ question, place, evidence }: PromptContext) {
+  return `You are the assistant for The County Budget Tracker, a civic platform that helps Kenyan
+residents understand county budget documents. You are answering a question about public finance for
+${place}.
+
+Answer using ONLY the numbered evidence below. It comes from budget documents that were uploaded to
+this platform and processed.
+
+Rules you must follow:
+- Never state a figure that does not appear in the evidence. Never estimate, round, or infer a total
+  the evidence does not give.
+- If the evidence does not answer the question, set "unanswered" to true and say so plainly. That is
+  a correct and useful answer, not a failure.
+- Cite evidence by its number in "citedEvidence". Do not refer to a page that is not shown below.
+- Explain budget terms in plain language when you use them: recurrent expenditure, development
+  expenditure, supplementary budget, absorption rate, vote head, pending bills.
+- Stay non-partisan. Describe what the documents record. Do not accuse anyone of wrongdoing.
+- Write for a resident with no finance training. Use short sentences.
+
+Question:
 ${question}
 
-Retrieved budget evidence:
-${JSON.stringify(context, null, 2)}
+Evidence:
+${evidence
+  .map(
+    (item, index) =>
+      `[${index + 1}] ${item.title}, page ${item.page}${item.section ? `, ${item.section}` : ""}\n${item.excerpt}`
+  )
+  .join("\n\n")}
 
-Instructions:
-- Give a clear answer in less than 200 words first.
-- Include exact figures, department names, programme names, ward names, and financial year.
-- Cite page numbers and document sections.
-- If multiple documents disagree, explain the difference.
-- If this relates to an amendment, compare original allocation vs amended allocation.
-- Add a "Resident Meaning" section explaining what it means in everyday life.
-- Add a "Follow-up Question" the resident can ask their MCA, county treasury, or public participation forum.
-- Explain technical terms when used, including recurrent expenditure, development expenditure, supplementary budget,
-  vote head, absorption rate, and pending bills.
-
-Return valid JSON with:
-directAnswer, amountsInvolved, sourceCitation, simpleExplanation, facts, interpretation,
-swahiliFriendlyExplanation, sourcePages[{documentId,title,page,section,table,programme,excerpt}],
-confidence, whyThisMatters, suggestedCivicAction, suggestedQuestion.
-`;
-}
-
-export function buildSmsVersionsPrompt(budgetUpdate: string) {
-  return `
-Convert the budget update below into short SMS messages for Kenyan residents.
-
-Budget update:
-${budgetUpdate}
-
-Rules:
-- Maximum 160 characters for standard SMS.
-- Use simple English.
-- Mention county, ward or sector, amount, and change.
-- Avoid technical jargon.
-- End with a call to action.
-- Do not invent missing county, ward, sector, amount, or change. If missing, say "Details missing" briefly.
-
-Create 3 versions:
-1. Formal English
-2. Simple citizen-friendly English
-3. Swahili-friendly version
-
-Return valid JSON:
+Return valid JSON with exactly these keys:
 {
-  "formalEnglish": "string under 160 characters",
-  "simpleEnglish": "string under 160 characters",
-  "swahiliFriendly": "string under 160 characters"
-}
-`;
-}
-
-export function buildAmendmentAnalysisPrompt(originalBudget: string, amendedBudget: string) {
-  return `
-Analyze this original budget and amended budget.
-
-Original budget:
-${originalBudget}
-
-Amended budget:
-${amendedBudget}
-
-Find:
-1. Projects whose allocation increased.
-2. Projects whose allocation reduced.
-3. Projects removed completely.
-4. New projects added.
-5. Wards or sectors affected.
-6. Large unexplained changes above KES 10 million.
-7. Development money shifted to recurrent spending.
-8. Projects with vague names like "miscellaneous", "administration", "other expenses", or "consultancy".
-
-Return:
-- Risk level: Low, Medium, High
-- Summary of change
-- Amount changed
-- Source pages
-- Why it matters
-- Question residents should ask
-
-Rules:
-- Use only the original and amended budget evidence.
-- Never guess amounts, pages, departments, programmes, wards, or sectors.
-- If a source page is missing, use page 0 and explain that the page is missing in the source section.
-- If documents disagree, show original and amended figures separately.
-- Do not accuse anyone of corruption. Flag accountability risks only.
-- High risk includes project removal, unexplained changes above KES 10 million, or development money shifted to recurrent spending.
-
-Return valid JSON:
-{
-  "overallRisk": "Low|Medium|High",
-  "summary": "Plain English summary",
-  "alerts": [
-    {
-      "riskLevel": "Low|Medium|High",
-      "changeType": "increased|reduced|removed|added|shifted-to-recurrent|vague-name|large-unexplained-change",
-      "project": "string",
-      "wardOrSector": "string",
-      "department": "string",
-      "programme": "string",
-      "summaryOfChange": "string",
-      "beforeKes": 0,
-      "afterKes": 0,
-      "amountChangedKes": 0,
-      "sourcePages": [
-        { "document": "Original budget", "page": 0, "section": "string" },
-        { "document": "Amended budget", "page": 0, "section": "string" }
-      ],
-      "whyItMatters": "string",
-      "questionResidentsShouldAsk": "string"
-    }
-  ]
-}
-`;
+  "directAnswer": "one or two sentences answering the question",
+  "simpleExplanation": "a plain-language explanation for a resident",
+  "amountsInvolved": ["each relevant figure, written as it appears in the evidence"],
+  "sourceDocument": "the title of the document the answer came from",
+  "citedEvidence": [1],
+  "confidence": 0.0,
+  "meaningForCitizens": "what this means for someone living there",
+  "suggestedQuestion": "a follow-up question a resident could ask their MCA or county treasury",
+  "unanswered": false
+}`;
 }
