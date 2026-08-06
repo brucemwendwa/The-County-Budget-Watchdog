@@ -41,6 +41,7 @@ export function BudgetChat({ county = "Nairobi", ward, compact = false }: Budget
     setError("");
     setQuestion(query);
     setShowEvidence(false);
+    setDegraded(false);
 
     try {
       const response = await fetch("/api/ask", {
