@@ -17,9 +17,6 @@ export function LandingPage() {
     <main>
       <section className="border-b bg-card">
         <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
-          <Badge variant="secondary" className="mb-4 w-fit">
-            Kenyan civic-tech · public finance intelligence
-          </Badge>
           <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
             <div className="space-y-6">
               <h1 className="max-w-3xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
