@@ -1,105 +1,104 @@
+-- Schema for The County Budget Tracker.
+--
+-- Everything here records what was read out of a real document. Codes are the hierarchical location
+-- codes used by the app (`machakos`, `machakos.mavoko`, `machakos.mavoko.athi-river`), so a row can
+-- be rolled up to a sub-county or county without a join.
+
 create extension if not exists pgcrypto;
-create extension if not exists vector;
 
 create type budget_document_type as enum (
-  'approved-budget',
+  'county-budget',
+  'finance-bill',
   'supplementary-budget',
-  'gazette-notice',
-  'implementation-report'
+  'programme-based-budget',
+  'annual-development-plan',
+  'county-fiscal-strategy-paper',
+  'implementation-report',
+  'controller-of-budget-report',
+  'other'
 );
 
 create type budget_document_status as enum (
-  'processing',
-  'review-ready',
-  'published',
-  'needs-attention'
+  'processed',
+  'no-rows-extracted',
+  'needs-ocr',
+  'ocr-failed'
 );
 
 create type budget_kind as enum ('development', 'recurrent');
-create type allocation_status as enum ('on-track', 'underspent', 'overspent', 'changed');
-create type sms_language as enum ('english', 'swahili', 'sheng');
-create type sms_status as enum ('draft', 'approved', 'sent');
-create type risk_level as enum ('low', 'medium', 'high');
+
+create type idea_category as enum (
+  'roads',
+  'health',
+  'education',
+  'water',
+  'agriculture',
+  'youth',
+  'markets',
+  'security',
+  'other'
+);
 
 create table if not exists budget_documents (
   id text primary key,
-  county text not null,
+  county_code text not null,
+  county_name text not null,
   title text not null,
+  file_name text not null,
   fiscal_year text not null,
   type budget_document_type not null,
-  status budget_document_status not null default 'processing',
+  status budget_document_status not null,
   uploaded_at timestamptz not null default now(),
   pages integer not null default 0,
   source_url text,
-  storage_path text,
-  extracted_text text,
-  metadata jsonb not null default '{}'::jsonb
+  -- The full detection record: which value came from the document, from which page, how confident.
+  detection jsonb not null default '{}'::jsonb,
+  -- The derived dashboard view: totals, departments, sectors, changes, clarifications.
+  analysis jsonb not null default '{}'::jsonb
 );
 
-create table if not exists ward_allocations (
+create table if not exists budget_line_items (
   id text primary key,
-  document_id text references budget_documents(id) on delete cascade,
-  county text not null,
-  ward text not null,
-  constituency text,
+  document_id text not null references budget_documents(id) on delete cascade,
+  county_code text not null,
+  -- Null when the document did not tie the row to a ward; such rows are county-wide.
+  ward_code text,
+  ward_name text,
+  sub_county_code text,
+  sub_county_name text,
   department text not null,
-  programme text,
+  programme text not null,
   project text not null,
   fiscal_year text not null,
-  allocation_kes bigint not null default 0,
-  expenditure_kes bigint not null default 0,
+  allocation_kes bigint not null,
+  -- Null when the row stated an allocation only, which is normal for budget estimates.
+  expenditure_kes bigint,
   budget_type budget_kind not null,
   page integer not null,
-  confidence numeric(4,3) not null default 0,
-  status allocation_status not null default 'on-track',
+  confidence numeric(4, 3) not null default 0,
+  excerpt text not null,
   created_at timestamptz not null default now()
 );
 
-create table if not exists budget_chunks (
-  id uuid primary key default gen_random_uuid(),
-  document_id text references budget_documents(id) on delete cascade,
-  county text not null,
-  fiscal_year text not null,
-  page_start integer not null,
-  page_end integer not null,
-  text text not null,
-  embedding vector(768),
-  metadata jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists suspicious_changes (
+create table if not exists citizen_ideas (
   id text primary key,
-  county text not null,
-  ward text,
-  department text,
-  description text not null,
-  before_kes bigint,
-  after_kes bigint,
-  delta_kes bigint,
-  risk risk_level not null,
-  source_page integer,
-  detected_at timestamptz not null default now(),
-  source_document_id text references budget_documents(id)
+  name text,
+  county_code text not null,
+  county_name text not null,
+  sub_county_code text not null,
+  sub_county_name text not null,
+  ward_code text not null,
+  ward_name text not null,
+  category idea_category not null,
+  idea text not null,
+  submitted_at timestamptz not null default now()
 );
 
-create table if not exists sms_digests (
-  id text primary key,
-  county text not null,
-  ward text not null,
-  language sms_language not null,
-  body text not null,
-  status sms_status not null default 'draft',
-  created_at timestamptz not null default now(),
-  approved_by text,
-  approved_at timestamptz,
-  sent_at timestamptz
-);
-
-create index if not exists ward_allocations_search_idx
-  on ward_allocations using gin (
-    to_tsvector('english', county || ' ' || ward || ' ' || department || ' ' || programme || ' ' || project)
+create index if not exists budget_documents_county_idx on budget_documents (county_code, fiscal_year);
+create index if not exists budget_line_items_ward_idx on budget_line_items (ward_code, fiscal_year);
+create index if not exists budget_line_items_county_idx on budget_line_items (county_code, fiscal_year);
+create index if not exists budget_line_items_search_idx
+  on budget_line_items using gin (
+    to_tsvector('english', coalesce(ward_name, '') || ' ' || department || ' ' || programme || ' ' || project)
   );
-
-create index if not exists ward_allocations_ward_idx on ward_allocations (county, ward, fiscal_year);
-create index if not exists suspicious_changes_risk_idx on suspicious_changes (risk, detected_at desc);
+create index if not exists citizen_ideas_ward_idx on citizen_ideas (ward_code, submitted_at desc);
