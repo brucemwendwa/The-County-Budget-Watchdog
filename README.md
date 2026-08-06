@@ -1,37 +1,59 @@
-# County Budget Watchdog
+# County Budget Tracker
 
-County Budget Watchdog helps Kenyan ward residents understand long county budget PDFs in simple language. It turns budget documents into searchable ward-level records, charts, civic alerts, and AI answers with source page references.
+County Budget Tracker helps citizens understand official county budget information from county level down to ward level, using AI explanations, source citations, and transparent public finance insights.
 
-The hackathon demo uses Next.js API routes as the backend and ships with Nairobi, Makueni, Kisumu, and Kiambu sample data. Production adapters are included for Gemini, Google Document AI, PostgreSQL/Supabase, BigQuery, Google Cloud Storage, Clerk/Firebase-style auth, and Africa's Talking SMS.
+**Tagline:** Track. Understand. Participate.
 
-## Stack
+## Problem
 
-- Frontend: Next.js 15, TypeScript, Tailwind CSS, shadcn-style components, Framer Motion, Recharts
-- Backend: Next.js App Router API routes
-- AI: Gemini API or Vertex AI Gemini long-context RAG
-- Parsing: Google Document AI, with local `pdf-parse` fallback
-- Data: PostgreSQL/Supabase for app records, BigQuery for analytics
-- Storage: Google Cloud Storage for PDFs
-- SMS: Africa's Talking
-- Deployment: Vercel frontend/API demo, Cloud Run worker-ready integration layer
+County budget PDFs are long, technical, and hard for residents, journalists, NGOs, and public officers to navigate. Ward-level details are buried in tables, amendments are hard to compare, and public participation often lacks accessible summaries tied to source pages.
 
-## Demo Flows
+## Solution
 
-1. Landing page: premium hero, upload CTA, chat CTA, SMS preview, trust indicators.
-2. Resident dashboard: select county and ward, inspect summary cards, charts, map signals, project cards, and AI box.
-3. Budget chat page: conversational AI, suggested questions, citations, page references, simplify and Swahili actions.
-4. Watchdog alerts page: amendments, suspicious changes, gazette monitor, risk badges.
-5. Admin dashboard: upload PDF, processing status, extracted table preview, SMS approval, analytics.
-6. API routes:
-   - `POST /api/upload`
-   - `POST /api/ask`
-   - `GET /api/monitor`
-   - `POST /api/monitor` for original-vs-amended budget comparison
-   - `GET /api/leak-detector`
-   - `POST /api/leak-detector` for approved/supplementary/expenditure/implementation comparison
-   - `GET /api/sms/digests`
-   - `POST /api/sms/digests`
-   - `POST /api/sms/versions`
+An AI-powered civic finance platform that:
+
+- Maps Kenya's 47 counties with honest analysis status
+- Drills down County → Sub-county → Ward → Financial year
+- Surfaces budget overview cards, sector charts, and ward insights from extracted data
+- Links every insight to source documents with page references
+- Answers questions via grounded RAG (Gemini when configured)
+- Flags **items needing clarification** (not accusations)
+- Supports PDF upload for missing or outdated documents
+
+## Key Features
+
+- **County insights** — allocations, development vs recurrent, sector breakdown
+- **Source documents** — titled records with financial year, type, and processing status
+- **Ask AI** — direct answers with confidence, resident meaning, and expandable source evidence
+- **Upload PDF** — extraction pipeline with honest processing states
+- **Public participation** — suggested questions citizens can ask officials
+- **Light/dark mode** — presentation-ready for government and civic audiences
+
+## Architecture
+
+- **Frontend:** Next.js 15, TypeScript, Tailwind CSS, shadcn-style UI, Framer Motion, Recharts
+- **Backend:** Next.js App Router API routes
+- **AI:** Gemini API (optional) with local RAG demo fallback
+- **Parsing:** Google Document AI with `pdf-parse` fallback
+- **Data:** PostgreSQL/Supabase, BigQuery analytics (production adapters included)
+- **Storage:** Google Cloud Storage for PDFs
+- **Deployment:** Vercel (demo), Cloud Run (worker-ready)
+
+## Data Honesty Principles
+
+- Real data shows source document, URL, financial year, and page reference
+- Demo/sample data is labeled **Demo Data**
+- Missing counties show: *No analyzed budget data available yet.*
+- Missing documents show: *No official source document has been added for this county yet.*
+- AI cannot answer: *The source document does not clearly provide this information.*
+- Never fake national coverage, corruption scores, or user metrics
+
+## Responsible AI
+
+- AI summarizes official public documents only
+- Users verify important findings from source PDFs
+- Clarification items are informational, not legal accusations
+- Does not replace audit, legal, or oversight institutions
 
 ## Run Locally
 
@@ -40,76 +62,128 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open [http://localhost:3000](http://localhost:3000).
 
-The app works without credentials by using demo data and mockable fallbacks. To enable production integrations, copy `.env.example` to `.env.local` and configure the relevant keys.
+The app runs without credentials using labeled demo data. Copy `.env.example` to `.env.local` for production integrations.
 
-## Deploy
+## Scanned PDFs and OCR
 
-- Vercel: import the repo, set environment variables from `.env.example`, and deploy the Next.js app.
-- Cloud Run: build the included `Dockerfile` when you want the API routes and background-style monitors in a Google Cloud runtime:
+Many official county budget PDFs (for example **Machakos Programme Based Budget 2024–2025**) are **scanned images** with no selectable text layer. The upload pipeline:
+
+1. Extracts text with `pdf-parse` (text layer check)
+2. If text is insufficient → classifies as `SCANNED_PDF_REQUIRES_OCR`
+3. If Google Document AI is configured → runs OCR, then parses tables
+4. If OCR is not configured → shows an honest setup message (no fake rows)
+
+### Google Document AI OCR setup
+
+1. Create a GCP project and enable **Document AI API**
+2. Create an **OCR** (or Document OCR) processor in the [Document AI console](https://console.cloud.google.com/ai/document-ai)
+3. Create a service account with `Document AI API User` (or broader Document AI access)
+4. Download the JSON key and set credentials:
 
 ```bash
-gcloud builds submit --tag gcr.io/$GOOGLE_CLOUD_PROJECT/county-budget-watchdog
-gcloud run deploy county-budget-watchdog \
-  --image gcr.io/$GOOGLE_CLOUD_PROJECT/county-budget-watchdog \
-  --region europe-west1 \
-  --allow-unauthenticated
+# .env.local
+GOOGLE_PROJECT_ID=your-gcp-project-id
+GOOGLE_LOCATION=us
+GOOGLE_DOCUMENT_AI_PROCESSOR_ID=your-processor-id
+GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
 ```
 
-## Production Data Flow
+Alternatively set `GOOGLE_SERVICE_ACCOUNT_JSON` to the full JSON string (useful on Vercel).
 
-1. Admin uploads PDF.
-2. PDF is stored in Google Cloud Storage.
-3. Document AI extracts text, tables, page anchors, and layout.
-4. Extraction normalizer produces `budget_documents`, `ward_allocations`, and `budget_chunks`.
-5. PostgreSQL stores reviewable app data. BigQuery stores analytics facts.
-6. Embeddings are created for chunks. Gemini long-context RAG answers questions with citations.
-7. Gazette and amendment monitor compares new documents to approved baselines.
-8. SMS digest generator writes simple English, Swahili, or Sheng-friendly summaries.
-9. Admin approves digests before Africa's Talking sends them.
+Legacy names `GOOGLE_CLOUD_PROJECT`, `DOCUMENT_AI_LOCATION`, and `DOCUMENT_AI_PROCESSOR_ID` are also supported.
+
+Without these variables, scanned PDF uploads will explain that OCR is required instead of reporting “0 records extracted” as a silent failure.
+
+## Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `GEMINI_API_KEY` | Enable real AI document Q&A |
+| `GEMINI_MODEL` | Gemini model name |
+| `GOOGLE_PROJECT_ID` / `GOOGLE_CLOUD_PROJECT` | GCP project for Document AI OCR |
+| `GOOGLE_LOCATION` / `DOCUMENT_AI_LOCATION` | Document AI region (e.g. `us`, `eu`) |
+| `GOOGLE_DOCUMENT_AI_PROCESSOR_ID` / `DOCUMENT_AI_PROCESSOR_ID` | OCR processor ID |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to service account JSON |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Inline service account JSON (optional) |
+| `DATABASE_URL` | PostgreSQL/Supabase |
+| `GCS_BUCKET` | PDF storage |
+| `ADMIN_API_KEY` | Unlocks the paid pipeline (see Access Tiers) |
+| See `.env.example` | Full list |
+
+## Access Tiers
+
+The app is public by design, but anything that costs money or leaves the system is withheld from
+anonymous callers. `lib/auth.ts` resolves every API request into one of two tiers:
+
+| | Public (no key) | Admin (`x-admin-api-key`) |
+|---|---|---|
+| PDF text-layer extraction | Yes | Yes |
+| Document AI OCR | No — honest "admin key required" message | Yes, when configured |
+| GCS PDF archiving | No | Yes, when configured |
+| Database persistence | No — local cache only | Yes, when configured |
+| SMS digest delivery | No — returns a preview | Yes, when configured |
+
+Set `ADMIN_API_KEY` to enable the admin tier. Without it every caller is public, which keeps the
+credential-free demo working while making it impossible for an anonymous upload to spend Document
+AI or Cloud Storage quota, or to send SMS to real phone numbers.
+
+## Upload Durability
+
+Uploads are only permanent when `DATABASE_URL` and `GCS_BUCKET` are set **and** the request carries
+the admin key. Otherwise the extraction goes to a local cache — `.runtime/` locally, `/tmp` on
+Vercel — that clears when the deployment restarts. The upload result panel states which of these
+happened rather than implying the document was stored.
+
+## Deploy to Vercel
+
+1. Import the repository in Vercel
+2. Set environment variables from `.env.example`
+3. Deploy — Next.js app and API routes deploy together
+
+```bash
+npm run build
+```
+
+## Demo Flow (Presentation)
+
+1. Homepage — County Budget Tracker brand and county grid
+2. Select Nairobi (Demo Data) on `/insights`
+3. Drill down sub-county and ward
+4. Review overview cards and sector charts
+5. Open source documents
+6. Ask AI: *What does this budget say about health?*
+7. Expand source evidence
+8. Review items needing clarification
+9. Read responsible AI notice
+
+## API Routes (Preserved)
+
+- `POST /api/upload` — PDF upload and extraction (admin key unlocks OCR, GCS, and database writes)
+- `POST /api/ask` — Grounded budget Q&A
+- `GET/POST /api/monitor` — Amendment comparison
+- `GET/POST /api/leak-detector` — Budget comparison signals (internal, no UI currently linked)
+- SMS digest routes — Africa's Talking integration (admin key required for real delivery)
+
+Admin dashboard remains at `/admin` but is not linked from primary navigation.
+
+If `/api/ask` gets a malformed response from Gemini, the answer falls back to the local grounded
+retriever and the UI labels it, rather than failing or showing an unvalidated model response.
+
+## Future Roadmap
+
+- Full ward-level extraction for all 47 counties
+- Official county portal document sync
+- USSD as a separate access channel (not primary web UI)
+- Public participation workflow integration
+- BigQuery analytics for cross-county trends
 
 ## Important Files
 
-- `components/resident-dashboard.tsx`: public resident intelligence surface
-- `components/admin-dashboard.tsx`: upload, review, alerts, and SMS approvals
-- `lib/parser.ts`: Document AI/local PDF extraction adapter
-- `lib/ai.ts`: Gemini RAG and demo fallback
-- `lib/db.ts`: PostgreSQL persistence
-- `lib/sms.ts`: Africa's Talking adapter
-- `lib/monitor.ts`: gazette/amendment monitor stub
-- `db/schema.sql`: PostgreSQL/Supabase schema
-- `bigquery/schema.sql`: BigQuery analytics schema
-- `prompts/*.md`: extraction, RAG, SMS, and amendment-monitor prompts
-
-## Amendment Comparison API
-
-```http
-POST /api/monitor
-{
-  "originalBudget": "Original budget text or extracted chunks...",
-  "amendedBudget": "Amended budget text or extracted chunks..."
-}
-```
-
-Returns risk level, summary of change, amount changed, source pages, why it matters, and the question residents should ask.
-
-## Budget Leak Detector API
-
-```http
-POST /api/leak-detector
-{
-  "approvedBudget": "Approved budget text or extracted chunks...",
-  "supplementaryBudget": "Supplementary budget text or extracted chunks...",
-  "expenditureReport": "Expenditure report text or extracted chunks...",
-  "implementationReport": "Implementation report text or extracted chunks..."
-}
-```
-
-Detects allocated-but-not-spent money, spending without clear allocation, repeated project names, ward inequality,
-never-completed projects, sudden cuts after public participation, and possible development-to-recurrent shifts.
-The alerts page shows these as red, yellow, and green resident-friendly risk cards.
-
-## Hackathon Positioning
-
-"M-Pesa simplicity meets Bloomberg budget intelligence" means the resident view stays simple: search your ward, ask a plain question, see the amount, page source, confidence, why it matters, and what action to take. The admin view keeps the heavier machinery visible for judges: OCR, extraction review, suspicious changes, and digest approvals.
+- `components/county-insights-page.tsx` — Main county drilldown experience
+- `components/budget-chat.tsx` — Ask AI with source evidence
+- `lib/ai.ts` — Gemini RAG and demo fallback
+- `lib/parser.ts` — Document AI / pdf-parse
+- `lib/counties.ts` — County registry and status badges
+- `data/sample-budget.ts` — Demo data (clearly labeled in UI)
