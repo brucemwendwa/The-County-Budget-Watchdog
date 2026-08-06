@@ -3,23 +3,43 @@
 @tailwind utilities;
 
 :root {
-  --background: 42 43% 97%;
-  --foreground: 210 20% 14%;
+  --background: 0 0% 99%;
+  --foreground: 210 18% 12%;
   --card: 0 0% 100%;
-  --card-foreground: 210 20% 14%;
+  --card-foreground: 210 18% 12%;
   --primary: 158 72% 28%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 42 88% 86%;
-  --secondary-foreground: 33 45% 18%;
-  --muted: 42 24% 91%;
-  --muted-foreground: 215 13% 42%;
-  --accent: 202 78% 90%;
-  --accent-foreground: 210 45% 22%;
-  --destructive: 0 72% 45%;
+  --secondary: 42 45% 94%;
+  --secondary-foreground: 33 35% 22%;
+  --muted: 210 16% 96%;
+  --muted-foreground: 215 12% 42%;
+  --accent: 158 32% 92%;
+  --accent-foreground: 158 72% 22%;
+  --destructive: 0 65% 45%;
   --destructive-foreground: 0 0% 100%;
-  --border: 38 21% 82%;
-  --input: 38 21% 82%;
+  --border: 210 14% 88%;
+  --input: 210 14% 88%;
   --ring: 158 72% 28%;
+}
+
+.dark {
+  --background: 158 18% 8%;
+  --foreground: 0 0% 96%;
+  --card: 158 14% 11%;
+  --card-foreground: 0 0% 96%;
+  --primary: 158 55% 42%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 158 12% 16%;
+  --secondary-foreground: 0 0% 92%;
+  --muted: 158 10% 14%;
+  --muted-foreground: 210 8% 68%;
+  --accent: 158 20% 18%;
+  --accent-foreground: 158 45% 75%;
+  --destructive: 0 55% 48%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 158 10% 20%;
+  --input: 158 10% 20%;
+  --ring: 158 55% 42%;
 }
 
 * {
@@ -28,8 +48,12 @@
 
 body {
   min-height: 100vh;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(249, 246, 238, 0.94)), hsl(var(--background));
+  background: hsl(var(--background));
   color: hsl(var(--foreground));
+}
+
+.dark body {
+  background: linear-gradient(180deg, hsl(158 18% 8%), hsl(158 16% 6%));
 }
 
 ::selection {
