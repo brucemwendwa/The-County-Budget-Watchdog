@@ -1,66 +1,36 @@
 import { Analytics } from "@vercel/analytics/next";
 import type { Metadata } from "next";
-import Link from "next/link";
 import type { ReactNode } from "react";
-import { ShieldCheck } from "lucide-react";
+
+import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
+import { ThemeProvider } from "@/components/theme-provider";
 
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "County Budget Watchdog",
-  description: "Plain-language county budget intelligence for Kenyan residents."
+  title: "County Budget Tracker",
+  description:
+    "AI-powered civic finance platform helping citizens understand official county budget documents from county to ward level."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("cbt-theme");if(t==="dark")document.documentElement.classList.add("dark");}catch(e){}})();`
+          }}
+        />
+      </head>
       <body className="font-sans antialiased">
-        <Analytics />
-        <header className="sticky top-0 z-40 border-b bg-background/88 backdrop-blur">
-          <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-            <Link href="/" className="flex items-center gap-2 font-bold tracking-normal">
-              <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                <ShieldCheck className="h-5 w-5" />
-              </span>
-              <span>County Budget Watchdog</span>
-            </Link>
-            <nav className="hidden items-center gap-1 text-sm font-semibold md:flex">
-              <Link className="rounded-md px-3 py-2 text-muted-foreground hover:bg-muted hover:text-foreground" href="/">
-                Home
-              </Link>
-              <Link
-                className="rounded-md px-3 py-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-                href="/dashboard"
-              >
-                Dashboard
-              </Link>
-              <Link
-                className="rounded-md px-3 py-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-                href="/chat"
-              >
-                Chat
-              </Link>
-              <Link
-                className="rounded-md px-3 py-2 text-muted-foreground hover:bg-muted hover:text-foreground"
-                href="/alerts"
-              >
-                Alerts
-              </Link>
-            </nav>
-            <nav className="flex items-center gap-1 text-xs font-semibold md:hidden">
-              <Link className="rounded-md px-2 py-2 text-muted-foreground hover:bg-muted hover:text-foreground" href="/dashboard">
-                Dashboard
-              </Link>
-              <Link className="rounded-md px-2 py-2 text-muted-foreground hover:bg-muted hover:text-foreground" href="/chat">
-                Chat
-              </Link>
-              <Link className="rounded-md px-2 py-2 text-muted-foreground hover:bg-muted hover:text-foreground" href="/alerts">
-                Alerts
-              </Link>
-            </nav>
-          </div>
-        </header>
-        {children}
+        <ThemeProvider>
+          <Analytics />
+          <SiteHeader />
+          {children}
+          <SiteFooter />
+        </ThemeProvider>
       </body>
     </html>
   );
