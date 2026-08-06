@@ -1,40 +1,44 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 type Theme = "light" | "dark";
 
+const STORAGE_KEY = "cbt-theme";
+
 const ThemeContext = createContext<{ theme: Theme; setTheme: (theme: Theme) => void } | null>(null);
 
+/**
+ * Light mode is the default. The stored preference is read after mount — the inline script in the
+ * document head has already applied the class, so there is no flash and no hydration mismatch.
+ */
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("light");
-  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("cbt-theme") as Theme | null;
-    const initial = stored === "dark" ? "dark" : "light";
-    setThemeState(initial);
-    document.documentElement.classList.toggle("dark", initial === "dark");
-    setMounted(true);
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (stored === "dark") setThemeState("dark");
   }, []);
 
-  function setTheme(next: Theme) {
+  const setTheme = useCallback((next: Theme) => {
     setThemeState(next);
-    window.localStorage.setItem("cbt-theme", next);
     document.documentElement.classList.toggle("dark", next === "dark");
-  }
+    try {
+      window.localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      // Private browsing can block storage; the choice still applies for this session.
+    }
+  }, []);
 
-  if (!mounted) {
-    return <>{children}</>;
-  }
+  const value = useMemo(() => ({ theme, setTheme }), [theme, setTheme]);
 
-  return <ThemeContext.Provider value={{ theme, setTheme }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {
   const context = useContext(ThemeContext);
   if (!context) {
-    return { theme: "light" as Theme, setTheme: () => undefined };
+    throw new Error("useTheme must be used inside ThemeProvider");
   }
   return context;
 }
