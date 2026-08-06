@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { z } from "zod";
 
 import { budgetDocuments, suspiciousChanges, wardAllocations } from "@/data/sample-budget";
 import { readLocalExtractions, readUploadedAllocations } from "@/lib/local-store";
@@ -12,15 +13,66 @@ type AskBudgetInput = {
   ward?: string;
 };
 
-export async function answerBudgetQuestion({ question, county, ward }: AskBudgetInput): Promise<BudgetAnswer> {
+export type AnswerSource = "gemini" | "local-rag" | "local-rag-fallback";
+
+export type BudgetAnswerResult = {
+  answer: BudgetAnswer;
+  source: AnswerSource;
+};
+
+const RagSourceSchema = z.object({
+  documentId: z.string().default("unknown-document"),
+  title: z.string().default("Untitled source document"),
+  page: z.number().int().min(0).default(0),
+  excerpt: z.string().default(""),
+  section: z.string().optional(),
+  table: z.string().optional(),
+  programme: z.string().optional()
+});
+
+/**
+ * The model is asked for JSON but is not guaranteed to return it, and an unvalidated shape reaches
+ * the UI as blank panels or a 500. Anything that fails this schema falls back to the local answer.
+ */
+const BudgetAnswerSchema = z.object({
+  directAnswer: z.string().min(1),
+  amountsInvolved: z.array(z.string()).default([]),
+  sourceCitation: z.string().default(""),
+  simpleExplanation: z.string().min(1),
+  facts: z.array(z.string()).default([]),
+  interpretation: z.string().default(""),
+  swahiliFriendlyExplanation: z.string().optional(),
+  sourcePages: z.array(RagSourceSchema).default([]),
+  confidence: z.number().default(0.5).transform(normalizeConfidence),
+  whyThisMatters: z.string().default(""),
+  suggestedCivicAction: z.string().default(""),
+  suggestedQuestion: z.string().default("")
+});
+
+export async function answerBudgetQuestion({
+  question,
+  county,
+  ward
+}: AskBudgetInput): Promise<BudgetAnswerResult> {
   const uploadedAllocations = await readUploadedAllocations();
   const contexts = retrieveBudgetContext(question, county, ward, uploadedAllocations);
 
-  if (process.env.GEMINI_API_KEY) {
-    return answerWithGemini(question, contexts);
+  if (!process.env.GEMINI_API_KEY) {
+    return { answer: await answerWithLocalRag(question, contexts), source: "local-rag" };
   }
 
-  return answerWithLocalRag(question, contexts);
+  const geminiAnswer = await answerWithGemini(question, contexts);
+  if (geminiAnswer) {
+    return { answer: geminiAnswer, source: "gemini" };
+  }
+
+  return { answer: await answerWithLocalRag(question, contexts), source: "local-rag-fallback" };
+}
+
+/** Gemini answers are clamped to 0–1; models sometimes report confidence as a percentage. */
+function normalizeConfidence(value: number) {
+  const normalized = value > 1 ? value / 100 : value;
+  return Math.min(1, Math.max(0, Number(normalized.toFixed(2))));
 }
 
 function retrieveBudgetContext(question: string, county?: County, ward?: string, uploadedAllocations = wardAllocations) {
@@ -50,20 +102,34 @@ function retrieveBudgetContext(question: string, county?: County, ward?: string,
   return scored.slice(0, 4).map(({ allocation }) => allocation);
 }
 
-async function answerWithGemini(question: string, contexts: ReturnType<typeof retrieveBudgetContext>) {
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-  const model = genAI.getGenerativeModel({
-    model: process.env.GEMINI_MODEL ?? "gemini-1.5-pro-latest",
-    generationConfig: {
-      temperature: 0.2,
-      responseMimeType: "application/json"
+/** Returns null when the model errors or returns something that is not a usable BudgetAnswer. */
+async function answerWithGemini(
+  question: string,
+  contexts: ReturnType<typeof retrieveBudgetContext>
+): Promise<BudgetAnswer | null> {
+  try {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+    const model = genAI.getGenerativeModel({
+      model: process.env.GEMINI_MODEL ?? "gemini-1.5-pro-latest",
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: "application/json"
+      }
+    });
+
+    const result = await model.generateContent(buildBudgetRagPrompt(question, contexts));
+    const parsed = BudgetAnswerSchema.safeParse(JSON.parse(result.response.text()));
+
+    if (!parsed.success) {
+      console.error("Gemini returned an unusable budget answer", parsed.error.issues);
+      return null;
     }
-  });
 
-  const result = await model.generateContent(buildBudgetRagPrompt(question, contexts));
-
-  const text = result.response.text();
-  return JSON.parse(text) as BudgetAnswer;
+    return parsed.data;
+  } catch (error) {
+    console.error("Gemini budget answer failed", error);
+    return null;
+  }
 }
 
 async function answerWithLocalRag(question: string, contexts: ReturnType<typeof retrieveBudgetContext>): Promise<BudgetAnswer> {
