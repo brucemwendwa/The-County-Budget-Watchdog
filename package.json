@@ -1,8 +1,8 @@
 {
-  "name": "county-budget-watchdog",
+  "name": "county-budget-tracker",
   "version": "0.1.0",
   "private": true,
-  "description": "County Budget Watchdog helps Kenyan residents understand county budget PDFs in plain language.",
+  "description": "County Budget Tracker helps citizens understand official county budget information from county to ward level.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
