@@ -8,3 +8,6 @@ out
 coverage
 *.log
 *.tsbuildinfo
+
+# generated geo source cache
+scripts/.geo-cache/
