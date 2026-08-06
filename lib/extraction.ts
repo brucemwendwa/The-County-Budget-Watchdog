@@ -1,5 +1,13 @@
 import "server-only";
 
+import {
+  MIN_ALLOCATION_KES,
+  extractMoneyValues,
+  isAggregateLine,
+  isHeaderOrTotalLine,
+  isProseLine,
+  toLines
+} from "@/lib/budget-text";
 import { getCounty } from "@/lib/kenya-server";
 import type { BudgetLineItem, BudgetType } from "@/lib/types";
 
@@ -12,8 +20,6 @@ import type { BudgetLineItem, BudgetType } from "@/lib/types";
  * only attributed to a ward that exists in that county.
  */
 
-/** Below this a number is a quantity, a page reference, or a line index — not a budget figure. */
-const MIN_ALLOCATION_KES = 50_000;
 const MAX_LINE_ITEMS = 400;
 
 /** Ward names that are ordinary words; these need the word "ward" nearby before they count. */
@@ -101,19 +107,16 @@ export function extractLineItems({
 
   for (const [pageIndex, pageText] of pages.entries()) {
     const pageNumber = pageIndex + 1;
-    const lines = pageText
-      .split(/\r?\n/)
-      .map((line) => line.replace(/\s+/g, " ").trim())
-      .filter(Boolean);
-
-    for (const line of lines) {
+    for (const line of toLines(pageText)) {
       if (looksLikeDepartmentHeading(line)) {
         currentDepartment = inferDepartment(line, currentDepartment);
         currentProgramme = inferProgramme(line, DEFAULT_PROGRAMME);
         continue;
       }
 
-      if (isLikelyHeaderOrTotal(line)) {
+      // Document totals are reported separately as stated figures, and narrative sentences about
+      // the budget are not rows. Counting either here would inflate every total downstream.
+      if (isHeaderOrTotalLine(line) || isAggregateLine(line) || isProseLine(line)) {
         continue;
       }
 
@@ -207,23 +210,6 @@ function matchWard(line: string, wards: WardMatcher) {
   return null;
 }
 
-function extractMoneyValues(line: string): number[] {
-  const explicit = Array.from(line.matchAll(/(?:KES|KSH|Kshs?\.?)\s?([\d,]+(?:\.\d+)?)/gi)).map((match) =>
-    toAmount(match[1])
-  );
-  if (explicit.length > 0) {
-    return explicit.filter((amount) => amount >= MIN_ALLOCATION_KES);
-  }
-
-  return Array.from(line.matchAll(/\b([1-9]\d{0,2}(?:,\d{3})+|[1-9]\d{5,})(?:\.\d{2})?\b/g))
-    .map((match) => toAmount(match[1]))
-    .filter((amount) => amount >= MIN_ALLOCATION_KES);
-}
-
-function toAmount(value: string) {
-  return Math.round(Number(value.replaceAll(",", "")));
-}
-
 function cleanProjectName(line: string) {
   return line
     .replace(/(?:KES|KSH|Kshs?\.?)\s?[\d,]+(?:\.\d+)?/gi, "")
@@ -241,12 +227,6 @@ function looksLikeDepartmentHeading(line: string) {
   if (line.length > 120) return false;
   if (extractMoneyValues(line).length > 0) return false;
   return /\b(department|vote|sector|directorate|ministry|programme)\b/i.test(line);
-}
-
-function isLikelyHeaderOrTotal(line: string) {
-  return /item description|project name|approved estimates|printed estimates|grand total|sub[- ]?total|^total\b|financial year|page \d+ of \d+/i.test(
-    line
-  );
 }
 
 function inferDepartment(line: string, fallback: string) {
