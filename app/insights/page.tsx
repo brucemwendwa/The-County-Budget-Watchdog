@@ -1,13 +1,21 @@
-import { Suspense } from "react";
+import type { Metadata } from "next";
 
-import { CountyInsightsPage } from "@/components/county-insights-page";
-import { getResidentDashboardData } from "@/lib/data";
+import { InsightsView } from "@/components/insights-view";
+import { PageHeader } from "@/components/page-header";
+
+export const metadata: Metadata = {
+  title: "Insights",
+  description: "Sector allocations, departments, key projects, and items needing clarification."
+};
 
 export default function InsightsPage() {
-  const data = getResidentDashboardData();
   return (
-    <Suspense fallback={<main className="mx-auto max-w-7xl p-6 text-muted-foreground">Loading county insights…</main>}>
-      <CountyInsightsPage data={data} />
-    </Suspense>
+    <div className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
+      <PageHeader
+        title="Budget insights"
+        description="Sector shares, department allocations, and the largest projects for the place you have selected — all calculated from rows read out of processed documents."
+      />
+      <InsightsView />
+    </div>
   );
 }
