@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { smsDigests } from "@/data/sample-budget";
 import { apiErrorResponse } from "@/lib/api";
-import { requireAdmin } from "@/lib/auth";
+import { resolveAccess } from "@/lib/auth";
 import { sendSmsDigest } from "@/lib/sms";
 
 const SmsSchema = z.object({
@@ -16,10 +16,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const auth = requireAdmin(request);
-  if (!auth.ok) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const access = resolveAccess(request);
 
   try {
     const input = SmsSchema.parse(await request.json());
@@ -29,7 +26,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Digest not found" }, { status: 404 });
     }
 
-    const result = await sendSmsDigest({ ...digest, status: "approved" }, input.recipients);
+    const result = await sendSmsDigest({ ...digest, status: "approved" }, input.recipients, {
+      allowRealSend: access.allowPaidServices
+    });
     return NextResponse.json({ digest: { ...digest, status: "approved" }, sms: result });
   } catch (error) {
     return apiErrorResponse(error);
