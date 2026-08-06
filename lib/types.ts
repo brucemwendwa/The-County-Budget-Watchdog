@@ -1,4 +1,4 @@
-export type County = "Nairobi" | "Makueni" | "Kisumu" | "Kiambu";
+export type County = "Nairobi" | "Makueni" | "Kisumu" | "Kiambu" | "Machakos";
 
 export type BudgetDocument = {
   id: string;
@@ -165,9 +165,49 @@ export type BudgetAnswer = {
   suggestedQuestion: string;
 };
 
+export type PdfClassification =
+  | "TEXT_PDF"
+  | "SCANNED_PDF_REQUIRES_OCR"
+  | "SCANNED_PDF_OCR_COMPLETE"
+  | "SCANNED_PDF_OCR_FAILED";
+
+export type TextLayerExtractionStatus = "succeeded" | "failed" | "unavailable";
+
+export type OcrProcessingStatus =
+  | "not_required"
+  | "waiting_for_configuration"
+  | "requires_admin_key"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped_not_configured";
+
+export type ExtractionStrategy = {
+  pdfType: PdfClassification;
+  textLayerExtraction: TextLayerExtractionStatus;
+  textLayerCharCount: number;
+  ocrRequired: boolean;
+  recommendedEngine: string;
+  ocrConfigured: boolean;
+  ocrProcessingStatus: OcrProcessingStatus;
+  processingStatus: string;
+  message: string;
+};
+
+/** Where an upload actually came to rest, so the UI never implies durability it does not have. */
+export type StorageStatus = {
+  pdfArchived: boolean;
+  databasePersisted: boolean;
+  /** Plain-language note shown to the uploader, e.g. that the extraction is temporary. */
+  message: string;
+};
+
 export type ExtractionResult = {
   document: BudgetDocument;
   allocations: WardAllocation[];
   warnings: string[];
   extractedTextPreview: string;
+  extractionStrategy: ExtractionStrategy;
+  /** Set by the upload route after storage is attempted; absent on results built by the parser alone. */
+  storage?: StorageStatus;
 };
