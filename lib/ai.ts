@@ -324,5 +324,3 @@ function normalizeConfidence(value: number) {
   const normalized = value > 1 ? value / 100 : value;
   return Math.min(1, Math.max(0, Number(normalized.toFixed(2))));
 }
-
-export type { LocationScope };
