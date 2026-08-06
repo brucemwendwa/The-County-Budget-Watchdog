@@ -2,61 +2,115 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * Deep green, white, charcoal, and soft gray — a civic palette that reads as public infrastructure
+ * rather than a consumer product. Light mode is the default; dark mode is a deliberate charcoal
+ * rather than an inverted green.
+ */
 :root {
-  --background: 0 0% 99%;
-  --foreground: 210 18% 12%;
+  --background: 0 0% 100%;
+  --foreground: 215 28% 14%;
   --card: 0 0% 100%;
-  --card-foreground: 210 18% 12%;
-  --primary: 158 72% 28%;
+  --card-foreground: 215 28% 14%;
+  --primary: 158 64% 22%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 42 45% 94%;
-  --secondary-foreground: 33 35% 22%;
-  --muted: 210 16% 96%;
-  --muted-foreground: 215 12% 42%;
-  --accent: 158 32% 92%;
-  --accent-foreground: 158 72% 22%;
-  --destructive: 0 65% 45%;
+  --secondary: 158 24% 95%;
+  --secondary-foreground: 158 55% 20%;
+  --muted: 210 20% 96%;
+  --muted-foreground: 215 14% 42%;
+  --accent: 158 30% 94%;
+  --accent-foreground: 158 60% 18%;
+  --destructive: 0 65% 42%;
   --destructive-foreground: 0 0% 100%;
-  --border: 210 14% 88%;
-  --input: 210 14% 88%;
-  --ring: 158 72% 28%;
+  --border: 214 18% 89%;
+  --input: 214 18% 89%;
+  --ring: 158 64% 30%;
+
+  /* Map surface. Land sits close to the page so the selected area is what draws the eye. */
+  --map-water: 205 30% 96%;
+  --map-land: 155 14% 86%;
+  --map-land-2: 155 16% 80%;
+  --map-hover: 158 40% 66%;
+  --map-selected: 158 64% 32%;
+  --map-documented: 158 26% 78%;
+  --map-stroke: 0 0% 100%;
 }
 
 .dark {
-  --background: 158 18% 8%;
-  --foreground: 0 0% 96%;
-  --card: 158 14% 11%;
-  --card-foreground: 0 0% 96%;
-  --primary: 158 55% 42%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 158 12% 16%;
-  --secondary-foreground: 0 0% 92%;
-  --muted: 158 10% 14%;
-  --muted-foreground: 210 8% 68%;
-  --accent: 158 20% 18%;
-  --accent-foreground: 158 45% 75%;
+  --background: 215 28% 9%;
+  --foreground: 210 20% 96%;
+  --card: 215 26% 12%;
+  --card-foreground: 210 20% 96%;
+  --primary: 158 52% 42%;
+  --primary-foreground: 215 30% 8%;
+  --secondary: 215 20% 18%;
+  --secondary-foreground: 210 20% 94%;
+  --muted: 215 20% 16%;
+  --muted-foreground: 214 14% 66%;
+  --accent: 158 26% 20%;
+  --accent-foreground: 158 50% 78%;
   --destructive: 0 55% 48%;
   --destructive-foreground: 0 0% 100%;
-  --border: 158 10% 20%;
-  --input: 158 10% 20%;
-  --ring: 158 55% 42%;
+  --border: 215 18% 22%;
+  --input: 215 18% 22%;
+  --ring: 158 52% 46%;
+
+  --map-water: 215 26% 11%;
+  --map-land: 215 14% 24%;
+  --map-land-2: 215 14% 30%;
+  --map-hover: 158 40% 44%;
+  --map-selected: 158 52% 44%;
+  --map-documented: 158 18% 32%;
+  --map-stroke: 215 26% 12%;
 }
 
 * {
   border-color: hsl(var(--border));
 }
 
+html {
+  color-scheme: light;
+}
+
+.dark html,
+html.dark {
+  color-scheme: dark;
+}
+
 body {
   min-height: 100vh;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
-}
-
-.dark body {
-  background: linear-gradient(180deg, hsl(158 18% 8%), hsl(158 16% 6%));
+  -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
   background: hsl(var(--primary));
   color: hsl(var(--primary-foreground));
+}
+
+/* A restrained nod to Maasai beadwork geometry: a repeating triangle band used as a section rule. */
+.maasai-band {
+  height: 6px;
+  background-image: linear-gradient(135deg, hsl(var(--primary)) 25%, transparent 25%),
+    linear-gradient(225deg, hsl(var(--primary)) 25%, transparent 25%);
+  background-size: 12px 12px;
+  background-position: 0 0;
+  opacity: 0.35;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Focus rings must stay visible on map paths, which have no background of their own. */
+svg path[role="button"]:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
 }
