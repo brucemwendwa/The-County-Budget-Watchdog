@@ -2,145 +2,134 @@
 
 import Link from "next/link";
 import type { ElementType } from "react";
-import { motion } from "framer-motion";
-import { ArrowRight, BadgeCheck, Bot, ChartColumnBig, FileUp, Landmark, MessageSquareText, RadioTower, ShieldCheck } from "lucide-react";
+import { ArrowRight, BookOpen, Bot, FileUp, Landmark, MapPinned, ShieldCheck } from "lucide-react";
 
-import { DepartmentBarChart } from "@/components/budget-charts";
+import { CountyGrid } from "@/components/county-grid";
+import { MaasaiDivider } from "@/components/maasai-divider";
+import { ResponsibleAiNote } from "@/components/responsible-ai-note";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { DepartmentSummary, SmsDigest } from "@/lib/types";
+import { CITIZEN_QUESTIONS } from "@/lib/counties";
 
-type LandingPageProps = {
-  departments: DepartmentSummary[];
-  smsPreview: SmsDigest;
-};
-
-export function LandingPage({ departments, smsPreview }: LandingPageProps) {
+export function LandingPage() {
   return (
     <main>
-      <section className="border-b bg-white">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[1.02fr_0.98fr] lg:px-8 lg:py-12">
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45 }}
-            className="flex flex-col justify-center space-y-6"
-          >
-            <Badge variant="secondary" className="w-fit">
-              Premium civic intelligence for Kenya
-            </Badge>
-            <div className="space-y-4">
-              <h1 className="max-w-3xl text-4xl font-black leading-tight tracking-normal text-foreground sm:text-6xl">
-                Understand your county budget in seconds.
+      <section className="border-b bg-card">
+        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+          <Badge variant="secondary" className="mb-4 w-fit">
+            Kenyan civic-tech · public finance intelligence
+          </Badge>
+          <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+            <div className="space-y-6">
+              <h1 className="max-w-3xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
+                Understand county budgets from county to ward level.
               </h1>
               <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-                Upload a county budget PDF, ask a plain-language question, and get source-backed answers residents can
-                act on.
+                Explore official county budget documents, track allocations, ask AI questions, and verify answers from
+                source pages.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Button asChild className="h-12">
+                  <Link href="/insights">
+                    Explore Counties
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="h-12">
+                  <Link href="/upload">
+                    Upload Budget PDF
+                    <FileUp className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <ShieldCheck className="h-4 w-4 text-primary" />
+                Built to support public participation using official county finance documents.
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Button asChild className="h-12 justify-between">
-                <Link href="/dashboard">
-                  <span className="flex items-center gap-2">
-                    <ChartColumnBig className="h-4 w-4" />
-                    View dashboard
-                  </span>
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
-              <Button asChild variant="outline" className="h-12 justify-between">
-                <Link href="/chat">
-                  <span className="flex items-center gap-2">
-                    <Bot className="h-4 w-4" />
-                    Ask budget question
-                  </span>
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <TrustIndicator icon={ShieldCheck} label="Page citations" />
-              <TrustIndicator icon={Landmark} label="Public finance sources" />
-              <TrustIndicator icon={BadgeCheck} label="Human SMS approval" />
-            </div>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.12, duration: 0.45 }}
-            className="space-y-4"
-          >
-            <Card className="overflow-hidden border-black/10 shadow-civic">
-              <CardHeader className="bg-foreground text-white">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <CardTitle className="text-white">County signal room</CardTitle>
-                    <CardDescription className="text-white/70">Nairobi demo intelligence</CardDescription>
-                  </div>
-                  <Badge className="bg-primary text-primary-foreground">Live demo</Badge>
-                </div>
+            <Card className="border-primary/15 shadow-civic">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MapPinned className="h-5 w-5 text-primary" />
+                  How it works
+                </CardTitle>
+                <CardDescription>County → Sub-county → Ward → Budget insights</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-5 p-5">
-                <DepartmentBarChart departments={departments} />
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <SignalMetric label="Tracked" value="KES 206M" />
-                  <SignalMetric label="Alerts" value="2" />
-                  <SignalMetric label="SMS ready" value="2" />
-                </div>
+              <CardContent className="space-y-4 text-sm leading-6 text-muted-foreground">
+                <Step n={1} text="Select a county with analyzed or demo budget data." />
+                <Step n={2} text="Drill down to sub-county and ward for local allocations." />
+                <Step n={3} text="Review source documents, sector charts, and items needing clarification." />
+                <Step n={4} text="Ask AI and verify every answer against cited pages." />
               </CardContent>
             </Card>
-            <Card className="border-primary/20 bg-primary text-primary-foreground shadow-civic">
-              <CardContent className="p-5">
-                <div className="flex items-start gap-3">
-                  <MessageSquareText className="mt-1 h-5 w-5" />
-                  <div>
-                    <p className="text-sm font-bold uppercase">SMS digest preview</p>
-                    <p className="mt-2 text-sm leading-6 text-primary-foreground/90">{smsPreview.body}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
+          </div>
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-7xl gap-4 px-4 py-6 sm:px-6 md:grid-cols-3 lg:px-8">
+      <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold sm:text-3xl">Select a county</h2>
+            <p className="mt-2 max-w-2xl text-muted-foreground">
+              Not all 47 counties are fully analyzed yet. Demo counties are clearly labeled.
+            </p>
+          </div>
+          <Badge variant="outline">47 counties · honest status badges</Badge>
+        </div>
+        <CountyGrid />
+      </section>
+
+      <MaasaiDivider className="mx-auto max-w-3xl px-4" />
+
+      <section className="mx-auto grid max-w-7xl gap-4 px-4 py-12 sm:px-6 md:grid-cols-3 lg:px-8">
         <FeatureCard
-          icon={FileUp}
-          title="Document AI pipeline"
-          body="Extract vote heads, ward projects, tables, fiscal years, recurrent spending, and development spending."
+          icon={Landmark}
+          title="Official documents"
+          body="County Budget Estimates, Finance Bills, supplementary budgets, and implementation reports with source links."
         />
         <FeatureCard
           icon={Bot}
           title="Grounded AI answers"
-          body="Every answer includes simple explanation, page references, confidence, resident meaning, and next action."
+          body="Direct answers with source citations, page references, confidence levels, and resident-friendly explanations."
         />
         <FeatureCard
-          icon={RadioTower}
-          title="Gazette monitoring"
-          body="Watch amendments and gazette notices for unexplained reallocations, removed projects, and vague line items."
+          icon={BookOpen}
+          title="Public participation"
+          body="Suggested questions citizens can ask MCAs, county treasury, and public participation forums."
         />
+      </section>
+
+      <section className="border-y bg-muted/40">
+        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+          <h2 className="text-2xl font-bold">Questions citizens can ask</h2>
+          <p className="mt-2 max-w-2xl text-muted-foreground">
+            Strengthen civic engagement with practical questions grounded in budget documents.
+          </p>
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {CITIZEN_QUESTIONS.map((question) => (
+              <div key={question} className="rounded-lg border bg-card p-4 text-sm font-medium shadow-sm">
+                {question}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+        <ResponsibleAiNote />
       </section>
     </main>
   );
 }
 
-function TrustIndicator({ icon: Icon, label }: { icon: ElementType; label: string }) {
+function Step({ n, text }: { n: number; text: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg border bg-card px-3 py-3 text-sm font-semibold shadow-sm">
-      <Icon className="h-4 w-4 text-primary" />
-      {label}
-    </div>
-  );
-}
-
-function SignalMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md bg-muted p-3">
-      <p className="text-xs font-bold uppercase text-muted-foreground">{label}</p>
-      <p className="mt-1 text-lg font-black">{value}</p>
+    <div className="flex gap-3">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
+        {n}
+      </span>
+      <p>{text}</p>
     </div>
   );
 }
