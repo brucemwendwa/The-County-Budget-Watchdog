@@ -1,6 +1,5 @@
-import { ResidentDashboard } from "@/components/resident-dashboard";
-import { getResidentDashboardData } from "@/lib/data";
+import { redirect } from "next/navigation";
 
-export default function DashboardPage() {
-  return <ResidentDashboard data={getResidentDashboardData()} />;
+export default function DashboardRedirect() {
+  redirect("/insights");
 }
