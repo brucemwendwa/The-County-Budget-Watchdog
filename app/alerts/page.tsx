@@ -1,8 +1,5 @@
-import { WatchdogAlertsPage } from "@/components/watchdog-alerts-page";
-import { getResidentDashboardData } from "@/lib/data";
-import { detectBudgetLeaks } from "@/lib/leak-detector";
+import { redirect } from "next/navigation";
 
-export default function AlertsPage() {
-  const data = getResidentDashboardData();
-  return <WatchdogAlertsPage changes={data.changes} documents={data.documents} leakReport={detectBudgetLeaks()} />;
+export default function AlertsRedirect() {
+  redirect("/insights#clarification");
 }
