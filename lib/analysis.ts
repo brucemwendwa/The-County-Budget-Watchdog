@@ -1,5 +1,12 @@
 import "server-only";
 
+import {
+  AGGREGATE_LINE_RULES,
+  firstAmountIn,
+  largestAmountIn,
+  matchAggregateLabel,
+  toLines
+} from "@/lib/budget-text";
 import { sectorForDepartment } from "@/lib/extraction";
 import type {
   BudgetAnalysis,
@@ -22,20 +29,6 @@ import { formatKes } from "@/lib/utils";
  * on) or summed from the extracted rows. Nothing is estimated to fill a gap: a total the document
  * does not state comes back as null and the UI says it is not stated.
  */
-
-type KeyNumberRule = {
-  label: string;
-  pattern: RegExp;
-};
-
-const KEY_NUMBER_RULES: KeyNumberRule[] = [
-  { label: "Total revenue", pattern: /total\s+(?:county\s+)?revenue|revenue\s+estimates?\s+total/i },
-  { label: "Total expenditure", pattern: /total\s+(?:gross\s+)?expenditure|gross\s+expenditure/i },
-  { label: "Development budget", pattern: /development\s+(?:budget|expenditure|estimates?|vote)/i },
-  { label: "Recurrent budget", pattern: /recurrent\s+(?:budget|expenditure|estimates?|vote)/i },
-  { label: "Equitable share", pattern: /equitable\s+share/i },
-  { label: "Own source revenue", pattern: /own\s+source\s+revenue|local\s+revenue/i }
-];
 
 const CHANGE_PATTERN =
   /\b(supplementary|revised|amended|reallocat\w+|increased by|reduced by|decreased by|additional provision|budget cut)\b/i;
@@ -89,46 +82,36 @@ export function buildAnalysis({
   };
 }
 
+/**
+ * The totals a document states about itself. Only the first occurrence of each label is kept —
+ * budget documents repeat their headline figures, and the summary page states them first.
+ */
 function extractKeyNumbers(pages: string[]): KeyNumber[] {
   const found = new Map<string, KeyNumber>();
 
   for (const [pageIndex, pageText] of pages.entries()) {
-    const lines = pageText
-      .split(/\r?\n/)
-      .map((line) => line.replace(/\s+/g, " ").trim())
-      .filter(Boolean);
+    for (const line of toLines(pageText)) {
+      const label = matchAggregateLabel(line);
+      if (!label || found.has(label)) continue;
 
-    for (const line of lines) {
-      for (const rule of KEY_NUMBER_RULES) {
-        if (found.has(rule.label) || !rule.pattern.test(line)) continue;
-        const amount = largestAmountIn(line);
-        if (amount === null) continue;
+      const amount = largestAmountIn(line);
+      if (amount === null) continue;
 
-        found.set(rule.label, {
-          label: rule.label,
-          amountKes: amount,
-          page: pageIndex + 1,
-          excerpt: line.slice(0, 220),
-          // A labelled total on its own line is a strong signal; buried in prose it is weaker.
-          confidence: line.length < 120 ? 0.85 : 0.65
-        });
-      }
+      found.set(label, {
+        label,
+        amountKes: amount,
+        page: pageIndex + 1,
+        excerpt: line.slice(0, 220),
+        // A labelled total on its own line is a strong signal; buried in prose it is weaker.
+        confidence: line.length < 120 ? 0.85 : 0.65
+      });
     }
   }
 
-  return [...found.values()];
-}
-
-/**
- * Budget totals are printed alongside comparison columns, and the figure being labelled is the
- * largest one on the line often enough that picking it beats picking the first.
- */
-function largestAmountIn(line: string): number | null {
-  const amounts = Array.from(line.matchAll(/\b([1-9]\d{0,2}(?:,\d{3})+|[1-9]\d{5,})(?:\.\d{2})?\b/g)).map((match) =>
-    Math.round(Number(match[1].replaceAll(",", "")))
+  // Reported in the order the rules declare, so the headline figures lead.
+  return AGGREGATE_LINE_RULES.map((rule) => found.get(rule.label)).filter(
+    (entry): entry is KeyNumber => entry !== undefined
   );
-  const usable = amounts.filter((amount) => amount >= 100_000);
-  return usable.length > 0 ? Math.max(...usable) : null;
 }
 
 function aggregateDepartments(lineItems: BudgetLineItem[]): DepartmentAllocation[] {
@@ -188,10 +171,7 @@ function detectTables(pages: string[]): ExtractedTable[] {
   const tables: ExtractedTable[] = [];
 
   for (const [pageIndex, pageText] of pages.entries()) {
-    const lines = pageText
-      .split(/\r?\n/)
-      .map((line) => line.replace(/\s+/g, " ").trim())
-      .filter(Boolean);
+    const lines = toLines(pageText);
 
     let runStart = -1;
     let runTotal = 0;
@@ -233,21 +213,11 @@ function detectTables(pages: string[]): ExtractedTable[] {
   return tables.slice(0, 40);
 }
 
-function firstAmountIn(line: string): number | null {
-  const match = line.match(/\b([1-9]\d{0,2}(?:,\d{3})+|[1-9]\d{5,})(?:\.\d{2})?\b/);
-  if (!match) return null;
-  const amount = Math.round(Number(match[1].replaceAll(",", "")));
-  return amount >= 50_000 ? amount : null;
-}
-
 function detectChanges(pages: string[]): DocumentChange[] {
   const changes: DocumentChange[] = [];
 
   for (const [pageIndex, pageText] of pages.entries()) {
-    const lines = pageText
-      .split(/\r?\n/)
-      .map((line) => line.replace(/\s+/g, " ").trim())
-      .filter((line) => line.length > 25 && line.length < 300);
+    const lines = toLines(pageText).filter((line) => line.length > 25 && line.length < 300);
 
     for (const line of lines) {
       if (!CHANGE_PATTERN.test(line)) continue;
