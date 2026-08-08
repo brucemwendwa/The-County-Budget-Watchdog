@@ -1,3 +1,4 @@
+import { del } from "@vercel/blob";
 import { NextResponse } from "next/server";
 
 import { resolveAccess } from "@/lib/auth";
