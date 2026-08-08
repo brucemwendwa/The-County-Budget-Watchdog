@@ -34,6 +34,15 @@ const KENYA_BOUNDS: Bounds = (() => {
 
 const ZOOM_DURATION_MS = 850;
 const MIN_VIEW_WIDTH = 0.4;
+/** Travel, in pixels, that turns a press into a pan rather than a click. */
+const DRAG_THRESHOLD_PX = 4;
+
+/**
+ * The browser's default focus ring on an SVG path is a box around its bounding box, which reads as
+ * a stray rectangle drawn over the map. Keyboard focus is shown by outlining the shape itself.
+ */
+const FOCUS_RING =
+  "outline-none focus-visible:stroke-[hsl(var(--ring))] focus-visible:[stroke-width:2.5] focus-visible:[paint-order:stroke]";
 
 type KenyaMapProps = {
   selection: LocationSelection;
@@ -213,15 +222,22 @@ export function KenyaMap({ selection, onSelect, documentedCounties = [], classNa
     [zoomBy]
   );
 
-  const dragRef = useRef<{ x: number; y: number; viewBox: ViewBox } | null>(null);
+  const dragRef = useRef<{ x: number; y: number; viewBox: ViewBox; pointerId: number; panning: boolean } | null>(null);
+  /** Set while a pan is in flight, so the click that ends it does not also select an area. */
+  const suppressClickRef = useRef(false);
   const [dragging, setDragging] = useState(false);
 
   const onPointerDown = useCallback(
     (event: React.PointerEvent<SVGSVGElement>) => {
       if (event.button !== 0 || !viewBoxRef.current) return;
       stopAnimation();
-      dragRef.current = { x: event.clientX, y: event.clientY, viewBox: viewBoxRef.current };
-      event.currentTarget.setPointerCapture(event.pointerId);
+      dragRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        viewBox: viewBoxRef.current,
+        pointerId: event.pointerId,
+        panning: false
+      };
     },
     [stopAnimation]
   );
@@ -232,22 +248,39 @@ export function KenyaMap({ selection, onSelect, documentedCounties = [], classNa
       const container = containerRef.current;
       if (!drag || !container) return;
 
+      // A press that travels only a few pixels is a click, not a pan.
+      if (!drag.panning) {
+        if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) <= DRAG_THRESHOLD_PX) return;
+        drag.panning = true;
+        suppressClickRef.current = true;
+        setDragging(true);
+        // The pointer is captured only once the pan is real. Capturing it on pointerdown would
+        // retarget the following click to this <svg>, so the county path under the pointer would
+        // never receive it — the map would stop responding to clicks entirely.
+        event.currentTarget.setPointerCapture(drag.pointerId);
+      }
+
       const box = container.getBoundingClientRect();
       const dx = ((event.clientX - drag.x) / box.width) * drag.viewBox.width;
       const dy = ((event.clientY - drag.y) / box.height) * drag.viewBox.height;
-      // A drag of a few pixels is a click, not a pan.
-      if (!dragging && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 4) {
-        setDragging(true);
-      }
       applyViewBox({ ...drag.viewBox, x: drag.viewBox.x - dx, y: drag.viewBox.y - dy });
     },
-    [applyViewBox, dragging]
+    [applyViewBox]
   );
 
-  const endDrag = useCallback(() => {
+  const endDrag = useCallback((event?: React.PointerEvent<SVGSVGElement>) => {
+    const drag = dragRef.current;
     dragRef.current = null;
-    // Cleared after the click event so a pan does not select whatever was under the pointer.
-    window.setTimeout(() => setDragging(false), 0);
+    if (!drag) return;
+
+    if (drag.panning && event?.currentTarget.hasPointerCapture(drag.pointerId)) {
+      event.currentTarget.releasePointerCapture(drag.pointerId);
+    }
+    setDragging(false);
+    // Released after the click event so a pan does not select whatever was under the pointer.
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
   }, []);
 
   const resetView = useCallback(() => {
@@ -268,10 +301,10 @@ export function KenyaMap({ selection, onSelect, documentedCounties = [], classNa
 
   const selectArea = useCallback(
     (area: MapArea, areaLevel: LocationLevel) => {
-      if (dragging || !area.code) return;
+      if (suppressClickRef.current || !area.code) return;
       onSelect(areaLevel, area.code);
     },
-    [dragging, onSelect]
+    [onSelect]
   );
 
   const wardsOfSelectedSubCounty = useMemo(
@@ -290,7 +323,7 @@ export function KenyaMap({ selection, onSelect, documentedCounties = [], classNa
       <svg
         ref={svgRef}
         viewBox={viewBoxToString(boundsToViewBox(KENYA_BOUNDS, aspectRef.current))}
-        className={cn("h-full w-full touch-none", dragRef.current ? "cursor-grabbing" : "cursor-grab")}
+        className={cn("h-full w-full touch-none", dragging ? "cursor-grabbing" : "cursor-grab")}
         role="application"
         aria-label="Map of Kenya. Select a county, then a sub-county, then a ward. The location pickers beside the map do the same thing."
         onWheel={onWheel}
@@ -298,8 +331,8 @@ export function KenyaMap({ selection, onSelect, documentedCounties = [], classNa
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
-        onPointerLeave={() => {
-          endDrag();
+        onPointerLeave={(event) => {
+          endDrag(event);
           setHovered(null);
         }}
       >
@@ -318,7 +351,8 @@ export function KenyaMap({ selection, onSelect, documentedCounties = [], classNa
                     : documented.has(area.code ?? "")
                       ? "fill-[hsl(var(--map-documented))]"
                       : "fill-[hsl(var(--map-land))]",
-                  interactive && "hover:fill-[hsl(var(--map-hover))] focus-visible:outline-none",
+                  FOCUS_RING,
+                  interactive && "hover:fill-[hsl(var(--map-hover))]",
                   // Kenya recedes as the user drills in, until only the chosen area is left.
                   !isSelected && level === "county" && "opacity-25",
                   !isSelected && level === "sub-county" && "opacity-10",
@@ -357,6 +391,7 @@ export function KenyaMap({ selection, onSelect, documentedCounties = [], classNa
                   className={cn(
                     "transition-[fill,opacity] duration-500",
                     isSelected ? "fill-[hsl(var(--map-selected))]" : "fill-[hsl(var(--map-land-2))]",
+                    FOCUS_RING,
                     interactive && "hover:fill-[hsl(var(--map-hover))]",
                     !isSelected && level === "sub-county" && "opacity-25",
                     !isSelected && level === "ward" && "opacity-0"
@@ -395,6 +430,7 @@ export function KenyaMap({ selection, onSelect, documentedCounties = [], classNa
                   className={cn(
                     "transition-[fill,opacity] duration-500",
                     isSelected ? "fill-[hsl(var(--map-selected))]" : "fill-[hsl(var(--map-land-2))]",
+                    FOCUS_RING,
                     interactive && "hover:fill-[hsl(var(--map-hover))]",
                     !isSelected && level === "ward" && "opacity-0"
                   )}
