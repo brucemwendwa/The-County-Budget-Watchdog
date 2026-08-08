@@ -73,15 +73,86 @@ export async function POST(request: Request) {
       { error: "The document could not be processed. Check the file and try again." },
       { status: 500 }
     );
+  } finally {
+    // Blob is a staging area, not the archive — GCS still owns that. Dropping the object here keeps
+    // the store from filling up with every PDF a passing visitor tried.
+    if (stagedBlobUrl) {
+      await del(stagedBlobUrl).catch((error) => console.error("Could not discard staged blob", error));
+    }
   }
 }
 
-function optionalString(value: FormDataEntryValue | null) {
+type Submission = {
+  file: File;
+  countyCode?: string;
+  fiscalYear?: string;
+  documentType?: DocumentType;
+  blobUrl: string | null;
+};
+
+async function readMultipartSubmission(request: Request): Promise<Submission | RouteError> {
+  const form = await request.formData();
+  const file = form.get("file");
+
+  if (!(file instanceof File)) {
+    return { error: "Missing PDF file.", status: 400 };
+  }
+
+  return {
+    file,
+    countyCode: optionalString(form.get("countyCode")),
+    fiscalYear: optionalString(form.get("fiscalYear")),
+    documentType: optionalDocumentType(form.get("documentType")),
+    blobUrl: null
+  };
+}
+
+async function readBlobSubmission(request: Request): Promise<Submission | RouteError> {
+  const body = (await request.json()) as Record<string, unknown>;
+  const blobUrl = typeof body.blobUrl === "string" ? body.blobUrl : "";
+
+  if (!isVercelBlobUrl(blobUrl)) {
+    return { error: "Missing or invalid upload reference.", status: 400 };
+  }
+
+  const response = await fetch(blobUrl);
+  if (!response.ok) {
+    return { error: "The uploaded file could not be read back. Try uploading again.", status: 502 };
+  }
+
+  const fileName = typeof body.fileName === "string" && body.fileName ? body.fileName : "budget.pdf";
+  const file = new File([await response.arrayBuffer()], fileName, { type: "application/pdf" });
+
+  return {
+    file,
+    countyCode: optionalString(body.countyCode),
+    fiscalYear: optionalString(body.fiscalYear),
+    documentType: optionalDocumentType(body.documentType),
+    blobUrl
+  };
+}
+
+/**
+ * The URL arrives from the browser, so it is only trustworthy once it is confirmed to point at
+ * Vercel Blob. Without this the route would fetch any address a caller named.
+ */
+function isVercelBlobUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname.endsWith(".blob.vercel-storage.com");
+  } catch {
+    return false;
+  }
+}
+
+type RouteError = { error: string; status: number };
+
+function optionalString(value: unknown) {
   const text = typeof value === "string" ? value.trim() : "";
   return text.length > 0 ? text : undefined;
 }
 
-function optionalDocumentType(value: FormDataEntryValue | null): DocumentType | undefined {
+function optionalDocumentType(value: unknown): DocumentType | undefined {
   const text = optionalString(value);
   return text && text in DOCUMENT_TYPE_LABELS ? (text as DocumentType) : undefined;
 }
