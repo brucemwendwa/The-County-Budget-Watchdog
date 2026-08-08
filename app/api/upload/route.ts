@@ -6,12 +6,11 @@ import { parseBudgetDocument } from "@/lib/parser";
 import { saveExtraction } from "@/lib/store";
 import { storePdf } from "@/lib/storage";
 import { DOCUMENT_TYPE_LABELS, type DocumentType, type StorageStatus } from "@/lib/types";
+import { MAX_PDF_BYTES, MAX_PDF_ERROR } from "@/lib/upload-limits";
 
 export const runtime = "nodejs";
 /** Large PDFs take time to read page by page. */
 export const maxDuration = 300;
-
-const MAX_BYTES = 25 * 1024 * 1024;
 
 export async function POST(request: Request) {
   const access = resolveAccess(request);
@@ -29,8 +28,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Only PDF uploads are supported." }, { status: 400 });
     }
 
-    if (file.size > MAX_BYTES) {
-      return NextResponse.json({ error: "PDF must be 25MB or smaller." }, { status: 400 });
+    if (file.size > MAX_PDF_BYTES) {
+      return NextResponse.json({ error: MAX_PDF_ERROR }, { status: 413 });
     }
 
     const result = await parseBudgetDocument({
