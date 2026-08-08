@@ -11,3 +11,4 @@ coverage
 
 # generated geo source cache
 scripts/.geo-cache/
+.env*
