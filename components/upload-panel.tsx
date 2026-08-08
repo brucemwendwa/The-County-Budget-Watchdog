@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ChangeEvent } from "react";
+import { upload } from "@vercel/blob/client";
 import { FileUp, Loader2, UploadCloud } from "lucide-react";
 
 import { ExtractionResultPanel } from "@/components/extraction-result-panel";
@@ -10,6 +11,34 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select } from "@/components/ui/select";
 import { FINANCIAL_YEARS } from "@/lib/kenya";
 import { DOCUMENT_TYPE_LABELS, type ExtractionResult } from "@/lib/types";
+
+/**
+ * Below this, a plain multipart POST is simpler and works on every host. Above it, Vercel's 4.5MB
+ * function body cap kicks in, so the file goes to Blob storage first. Set well under the cap to
+ * leave room for the form envelope.
+ */
+const DIRECT_POST_LIMIT = 4 * 1024 * 1024;
+
+/**
+ * Reads the API response as JSON, falling back to a readable message.
+ *
+ * A platform-level rejection never reaches the route, so it comes back as plain text such as
+ * "Request Entity Too Large" — parsing that as JSON is what produced the old "Unexpected token 'R'".
+ */
+async function readPayload(response: Response): Promise<{ error?: string } | null> {
+  const body = await response.text();
+
+  try {
+    return body ? JSON.parse(body) : null;
+  } catch {
+    return {
+      error:
+        response.status === 413
+          ? "The server refused the upload as too large. Blob storage needs to be attached for files this size."
+          : `The server returned an unexpected response (${response.status}).`
+    };
+  }
+}
 
 /**
  * Uploads a budget PDF and shows what the pipeline actually managed to read.
@@ -34,22 +63,16 @@ export function UploadPanel() {
     setError("");
   }
 
-  async function upload() {
+  async function submit() {
     if (!file) return;
 
     setLoading(true);
     setError("");
     setResult(null);
 
-    const form = new FormData();
-    form.append("file", file);
-    if (countyCode) form.append("countyCode", countyCode);
-    if (fiscalYear) form.append("fiscalYear", fiscalYear);
-    if (documentType) form.append("documentType", documentType);
-
     try {
-      const response = await fetch("/api/upload", { method: "POST", body: form });
-      const payload = await response.json();
+      const response = (await stageInBlob(file)) ?? (await postDirectly(file));
+      const payload = await readPayload(response);
       if (!response.ok) throw new Error(payload?.error ?? "The document could not be processed.");
       setResult(payload as ExtractionResult);
     } catch (caught) {
@@ -57,6 +80,50 @@ export function UploadPanel() {
     } finally {
       setLoading(false);
     }
+  }
+
+  const overrides = () => ({
+    ...(countyCode ? { countyCode } : {}),
+    ...(fiscalYear ? { fiscalYear } : {}),
+    ...(documentType ? { documentType } : {})
+  });
+
+  /**
+   * Sends the file to Vercel Blob first, then asks the API to read it from there.
+   *
+   * Vercel rejects a function request body over 4.5MB before the route ever runs, so anything
+   * larger has to reach storage without passing through one. Returns null when there is no Blob
+   * store — self-hosted has no such cap and posts the file directly instead.
+   */
+  async function stageInBlob(pdf: File) {
+    if (pdf.size <= DIRECT_POST_LIMIT) return null;
+
+    let blobUrl: string;
+    try {
+      const blob = await upload(pdf.name, pdf, {
+        access: "public",
+        contentType: "application/pdf",
+        handleUploadUrl: "/api/upload/blob-token"
+      });
+      blobUrl = blob.url;
+    } catch {
+      // No Blob store configured, so fall through to the direct post.
+      return null;
+    }
+
+    return fetch("/api/upload", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ blobUrl, fileName: pdf.name, ...overrides() })
+    });
+  }
+
+  function postDirectly(pdf: File) {
+    const form = new FormData();
+    form.append("file", pdf);
+    for (const [key, value] of Object.entries(overrides())) form.append(key, value);
+
+    return fetch("/api/upload", { method: "POST", body: form });
   }
 
   return (
@@ -123,7 +190,7 @@ export function UploadPanel() {
             </div>
           </details>
 
-          <Button onClick={upload} disabled={!file || loading} className="w-full">
+          <Button onClick={submit} disabled={!file || loading} className="w-full">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
             {loading ? "Reading the document…" : "Upload and analyse"}
           </Button>
