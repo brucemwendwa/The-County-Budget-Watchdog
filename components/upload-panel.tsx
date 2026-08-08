@@ -10,7 +10,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select } from "@/components/ui/select";
 import { FINANCIAL_YEARS } from "@/lib/kenya";
 import { DOCUMENT_TYPE_LABELS, type ExtractionResult } from "@/lib/types";
-import { MAX_PDF_BYTES, MAX_PDF_ERROR, MAX_PDF_LABEL } from "@/lib/upload-limits";
 
 /**
  * Uploads a budget PDF and shows what the pipeline actually managed to read.
@@ -37,10 +36,6 @@ export function UploadPanel() {
 
   async function upload() {
     if (!file) return;
-    if (file.size > MAX_PDF_BYTES) {
-      setError(MAX_PDF_ERROR);
-      return;
-    }
 
     setLoading(true);
     setError("");
@@ -82,7 +77,7 @@ export function UploadPanel() {
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed bg-muted/40 px-4 py-10 text-center transition-colors hover:border-primary/40 hover:bg-accent/40">
             <FileUp className="h-8 w-8 text-primary" aria-hidden />
             <span className="mt-3 font-semibold">{file ? file.name : "Choose a county budget PDF"}</span>
-            <span className="mt-1 text-sm text-muted-foreground">PDF only, up to {MAX_PDF_LABEL}</span>
+            <span className="mt-1 text-sm text-muted-foreground">PDF only, any size</span>
             <input className="sr-only" type="file" accept="application/pdf" onChange={onFileChange} />
           </label>
 
