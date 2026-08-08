@@ -13,6 +13,16 @@ export const runtime = "nodejs";
  * Returns 501 when no Blob store is attached — self-hosted deployments have no body cap and use the
  * direct multipart POST instead, so the client treats that as "fall back", not "fail".
  */
+/**
+ * Reports whether large uploads are possible at all.
+ *
+ * The Blob client collapses every token failure into one generic error, so the browser asks here
+ * first rather than starting an upload that cannot finish.
+ */
+export async function GET() {
+  return NextResponse.json({ configured: Boolean(process.env.BLOB_READ_WRITE_TOKEN) });
+}
+
 export async function POST(request: Request) {
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
     return NextResponse.json({ error: "Blob storage is not configured." }, { status: 501 });
