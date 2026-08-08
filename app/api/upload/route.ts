@@ -6,7 +6,6 @@ import { parseBudgetDocument } from "@/lib/parser";
 import { saveExtraction } from "@/lib/store";
 import { storePdf } from "@/lib/storage";
 import { DOCUMENT_TYPE_LABELS, type DocumentType, type StorageStatus } from "@/lib/types";
-import { MAX_PDF_BYTES, MAX_PDF_ERROR } from "@/lib/upload-limits";
 
 export const runtime = "nodejs";
 /** Large PDFs take time to read page by page. */
@@ -28,10 +27,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Only PDF uploads are supported." }, { status: 400 });
     }
 
-    if (file.size > MAX_PDF_BYTES) {
-      return NextResponse.json({ error: MAX_PDF_ERROR }, { status: 413 });
-    }
-
+    // No size ceiling: county budget documents run to hundreds of pages and the reader is expected
+    // to chew through whatever it is given. The only limits left are the host's own body limit and
+    // available memory, since formData() buffers the upload before parsing starts.
     const result = await parseBudgetDocument({
       file,
       countyCode: optionalString(form.get("countyCode")),
