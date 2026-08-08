@@ -20,6 +20,14 @@ import { DOCUMENT_TYPE_LABELS, type ExtractionResult } from "@/lib/types";
 const DIRECT_POST_LIMIT = 4 * 1024 * 1024;
 
 /**
+ * Shown when a file is too large to post through a function and there is nowhere else to put it.
+ * Naming the environment variable matters: the person reading this is usually the one who can set
+ * it, and the alternative — a bare "upload failed" — sends them looking at the PDF instead.
+ */
+const NO_BLOB_STORE =
+  "This file is over 4 MB, which needs Blob storage, and no Blob store is attached to this deployment. Attach one (BLOB_READ_WRITE_TOKEN) or try a smaller PDF.";
+
+/**
  * Reads the API response as JSON, falling back to a readable message.
  *
  * A platform-level rejection never reaches the route, so it comes back as plain text such as
@@ -34,9 +42,20 @@ async function readPayload(response: Response): Promise<{ error?: string } | nul
     return {
       error:
         response.status === 413
-          ? "The server refused the upload as too large. Blob storage needs to be attached for files this size."
+          ? `${NO_BLOB_STORE} The host rejected the file before it reached the reader.`
           : `The server returned an unexpected response (${response.status}).`
     };
+  }
+}
+
+/** Asks the token route whether a Blob store is attached, before a large upload is attempted. */
+async function blobStoreConfigured() {
+  try {
+    const response = await fetch("/api/upload/blob-token");
+    const payload = (await response.json()) as { configured?: boolean };
+    return payload.configured === true;
+  } catch {
+    return false;
   }
 }
 
@@ -71,7 +90,7 @@ export function UploadPanel() {
     setResult(null);
 
     try {
-      const response = (await stageInBlob(file)) ?? (await postDirectly(file));
+      const response = file.size > DIRECT_POST_LIMIT ? await stageInBlob(file) : await postDirectly(file);
       const payload = await readPayload(response);
       if (!response.ok) throw new Error(payload?.error ?? "The document could not be processed.");
       setResult(payload as ExtractionResult);
@@ -92,11 +111,12 @@ export function UploadPanel() {
    * Sends the file to Vercel Blob first, then asks the API to read it from there.
    *
    * Vercel rejects a function request body over 4.5MB before the route ever runs, so anything
-   * larger has to reach storage without passing through one. Returns null when there is no Blob
-   * store — self-hosted has no such cap and posts the file directly instead.
+   * larger has to reach storage without passing through one. There is no working fallback for a
+   * file this size: posting it directly would just be refused by the host, so a missing Blob store
+   * is reported as the configuration gap it is.
    */
   async function stageInBlob(pdf: File) {
-    if (pdf.size <= DIRECT_POST_LIMIT) return null;
+    if (!(await blobStoreConfigured())) throw new Error(NO_BLOB_STORE);
 
     let blobUrl: string;
     try {
@@ -107,8 +127,7 @@ export function UploadPanel() {
       });
       blobUrl = blob.url;
     } catch {
-      // No Blob store configured, so fall through to the direct post.
-      return null;
+      throw new Error("The file could not be sent to storage. Check your connection and try again.");
     }
 
     return fetch("/api/upload", {
