@@ -12,30 +12,40 @@ export const runtime = "nodejs";
 /** Large PDFs take time to read page by page. */
 export const maxDuration = 300;
 
+/**
+ * Reads a budget PDF and returns the extraction.
+ *
+ * Takes the document one of two ways. A JSON body naming a Blob URL means the browser already
+ * uploaded the file straight to Vercel Blob, so only the URL crossed the 4.5MB function body cap; a
+ * multipart body means the file came through the request itself, which self-hosted deployments can
+ * do at any size. There is no size ceiling in either path.
+ */
 export async function POST(request: Request) {
   const access = resolveAccess(request);
+  let stagedBlobUrl: string | null = null;
 
   try {
-    const form = await request.formData();
-    const file = form.get("file");
+    const submission = request.headers.get("content-type")?.includes("application/json")
+      ? await readBlobSubmission(request)
+      : await readMultipartSubmission(request);
 
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: "Missing PDF file." }, { status: 400 });
+    if ("error" in submission) {
+      return NextResponse.json({ error: submission.error }, { status: submission.status });
     }
+
+    const { file, countyCode, fiscalYear, documentType } = submission;
+    stagedBlobUrl = submission.blobUrl;
 
     const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
     if (!isPdf) {
       return NextResponse.json({ error: "Only PDF uploads are supported." }, { status: 400 });
     }
 
-    // No size ceiling: county budget documents run to hundreds of pages and the reader is expected
-    // to chew through whatever it is given. The only limits left are the host's own body limit and
-    // available memory, since formData() buffers the upload before parsing starts.
     const result = await parseBudgetDocument({
       file,
-      countyCode: optionalString(form.get("countyCode")),
-      fiscalYear: optionalString(form.get("fiscalYear")),
-      documentType: optionalDocumentType(form.get("documentType")),
+      countyCode,
+      fiscalYear,
+      documentType,
       allowOcr: access.allowPaidServices
     });
 
